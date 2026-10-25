@@ -103,6 +103,7 @@ def test_copy_kernel_matches_reference():
 
 
 @pytest.mark.gpu
+@needs_triton
 @pytest.mark.skipif(not torch.cuda.is_available() or torch.cuda.mem_get_info()[0] < 8 * 2**30,
                     reason="needs a CUDA GPU with 8 GB free")
 def test_copy_kernel_handles_offsets_past_2_to_the_31():
