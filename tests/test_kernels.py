@@ -58,6 +58,17 @@ def test_recovered_scores_are_probabilities():
     assert float(out[0, 0, 50:].abs().sum()) == 0.0
 
 
+def test_action_scores_rejects_a_buffer_narrower_than_the_cache():
+    """With a narrow `out`, the Triton kernel would write into the next head's / request's row."""
+    cache = _filled_cache([40], hkv=2, d=16)            # 3 blocks of 16 = 48 slots
+    bt, seq = cache.block_table([0]), cache.seq_tensor([0])
+    q = torch.randn(1, 4, 16, device=DEVICE)
+    _, lse = paged_decode_attention_ref(q, cache.kv[0], bt, seq)
+    out = torch.zeros(1, 2, 16, device=DEVICE)
+    with pytest.raises(ValueError, match="wide"):
+        action_scores(q, cache.kv[0], bt, seq, lse, out, torch.zeros(1, dtype=torch.int32, device=DEVICE))
+
+
 @pytest.mark.parametrize("seq_used,budget,bs", [(100, 40, 16), (17, 10, 16), (64, 64, 16), (200, 3, 8)])
 def test_plan_is_conflict_free(seq_used, budget, bs):
     g = torch.Generator().manual_seed(seq_used)

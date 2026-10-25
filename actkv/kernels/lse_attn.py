@@ -136,6 +136,10 @@ def action_scores(q, kv, block_table, seq_used, lse, out, n_seen, scale=None):
     q [R, Hq, D], kv [2, NB, BS, Hkv, D], block_table [R, MB] int32, seq_used [R] int32,
     lse [R, Hq] fp32, out [R, Hkv, MB*BS] fp32, n_seen [R] int32 (incremented here).
     """
+    span = block_table.shape[1] * kv.shape[2]
+    if out.shape[-1] < span:   # the kernel would silently write past each row
+        raise ValueError(f"out is {out.shape[-1]} wide but the block table spans {span} slots; "
+                         "allocate it as [R, Hkv, max_blocks * block_size]")
     if not HAS_TRITON:
         return action_scores_ref(q, kv, block_table, seq_used, lse, out, n_seen, scale)
     r_n, hq, d = q.shape
