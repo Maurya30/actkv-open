@@ -4,9 +4,16 @@ import pytest
 import torch
 
 from conftest import DEVICE
+from actkv.kernels import compaction, lse_attn
 from actkv.kernels.compaction import apply_copies, apply_copies_ref, plan_compaction
 from actkv.kernels.lse_attn import action_scores, action_scores_ref, paged_decode_attention_ref
 from actkv.paged import PagedKVCache
+
+# Without triton, action_scores / apply_copies fall back to the torch references, so a kernel-vs-reference
+# test would compare the reference with itself and pass no matter what.
+needs_triton = pytest.mark.skipif(
+    not (lse_attn.HAS_TRITON and compaction.HAS_TRITON),
+    reason="triton not installed: the kernel falls back to the torch reference (see scripts/test_interpreter.sh)")
 
 
 def _filled_cache(lens, bs=16, hkv=2, d=32, layers=1, seed=0, shuffle=True):
@@ -23,6 +30,7 @@ def _filled_cache(lens, bs=16, hkv=2, d=32, layers=1, seed=0, shuffle=True):
     return cache
 
 
+@needs_triton
 @pytest.mark.parametrize("lens,hq,hkv,d,bs", [
     ([37], 4, 2, 32, 16),
     ([5, 64, 100], 8, 2, 64, 16),
@@ -83,6 +91,7 @@ def test_plan_is_conflict_free(seq_used, budget, bs):
     assert plan.drop_blocks == math.ceil(seq_used / bs) - math.ceil(budget / bs)
 
 
+@needs_triton
 def test_copy_kernel_matches_reference():
     flat = torch.randn(4, 300, 96, device=DEVICE)
     src = torch.tensor([3, 50, 77, 299], device=DEVICE)

@@ -3,7 +3,8 @@ import os
 
 import torch
 
-# No GPU -> run Triton kernels through the interpreter so they are still exercised.
+# No GPU -> run Triton kernels through the interpreter. That needs triton installed, which is
+# Linux-only; elsewhere the kernel-vs-reference tests skip (scripts/test_interpreter.sh runs them).
 if not torch.cuda.is_available():
     os.environ.setdefault("TRITON_INTERPRET", "1")
 
