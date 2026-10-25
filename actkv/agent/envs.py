@@ -29,49 +29,67 @@ class Env:
 
 
 class VaultEnv(Env):
-    """Offline toy task with long, noisy observations (useful for smoke tests and quick ablations).
+    """Offline memory task with long, noisy observations (useful for smoke tests and quick ablations).
 
-    A code word is hidden in one of N rooms. Each room returns a long inventory listing; the room
-    with the code also points to the drawer it is in. The agent must `search_room`, then
-    `open_drawer`, then `submit` the code. Task-critical facts appear early and are needed many
-    rounds later, which is exactly what action-guided retention should keep.
+    One room holds a note with the vault code; the note crumbles after it is read once. The note
+    also says where a trail starts. Trail rooms show nothing special until the note has been read,
+    and only in order: each points to the next, and the last one holds the vault. Submitting works
+    only at the vault and only once. So the code has to be carried across at least `trail` + 1
+    rounds of long observations, and with len(WORDS) * 10,000 possible codes a blind guess
+    essentially never works.
     """
 
-    system = ("You are an agent exploring a building. Use the tools to find the code word and submit it. "
-              "Call exactly one tool per turn.")
+    system = ("You are an agent exploring a building. Use the tools to find the vault code, follow the "
+              "trail to the vault and open it. Call exactly one tool per turn.")
     tools = [
-        tool("search_room", "List the contents of a room.", room="room name, e.g. 'room 3'"),
-        tool("open_drawer", "Open a drawer in a room.", room="room name", drawer="drawer label, e.g. 'B'"),
-        tool("submit", "Submit the code word.", code="the code word"),
+        tool("search_room", "Look around a room.", room="room name, e.g. 'room 3'"),
+        tool("submit", "Enter the code on the vault keypad (one attempt).", code="the code, e.g. 'amber-0420'"),
     ]
     WORDS = ["amber", "basalt", "cobalt", "dune", "ember", "fjord", "garnet", "harbor", "indigo",
              "juniper", "krypton", "lagoon", "marble", "nebula", "obsidian", "prairie", "quartz"]
     ITEMS = ["chair", "lamp", "box", "rug", "book", "vase", "clock", "plant", "mug", "poster",
              "cable", "jar", "tray", "fan", "basket", "mirror", "kettle", "towel"]
 
-    def __init__(self, n_tasks: int = 50, n_rooms: int = 8, filler: int = 40, seed: int = 0):
-        self.n_tasks, self.n_rooms, self.filler, self.seed = n_tasks, n_rooms, filler, seed
-        self.max_rounds = n_rooms + 6
+    def __init__(self, n_tasks: int = 50, n_rooms: int = 8, trail: int = 4, filler: int = 40, seed: int = 0):
+        if trail < 1 or trail + 1 > n_rooms:
+            raise ValueError("need 1 <= trail <= n_rooms - 1")
+        self.n_tasks, self.n_rooms, self.trail, self.filler, self.seed = n_tasks, n_rooms, trail, filler, seed
+        self.max_rounds = n_rooms + trail + 4
 
     def __len__(self):
         return self.n_tasks
 
     def reset(self, i: int) -> str:
-        self.rng = random.Random(self.seed * 100_003 + i)
-        self.room = self.rng.randrange(1, self.n_rooms + 1)
-        self.drawer = self.rng.choice("ABCDEF")
-        self.code = self.rng.choice(self.WORDS)
-        self.opened = False
-        return (f"The building has rooms 1 to {self.n_rooms}. One room contains a note saying which "
-                f"drawer holds a code word. Find the code word and submit it.")
+        rng = random.Random(self.seed * 100_003 + i)
+        rooms = rng.sample(range(1, self.n_rooms + 1), self.trail + 1)
+        self.note_room, self.trail_rooms = rooms[0], rooms[1:]
+        self.code = f"{rng.choice(self.WORDS)}-{rng.randrange(10_000):04d}"
+        self.salt = rng.randrange(10**9)
+        self.note_read, self.reached, self.at_vault = False, 0, False
+        return (f"The building has rooms 1 to {self.n_rooms}. A note with the vault code is in one of the "
+                "rooms. Find and read it, follow the trail it describes to the vault, and submit the code there.")
 
-    def _room_text(self, r: int) -> str:
-        rng = random.Random(self.seed * 7 + r * 131 + self.room)
+    def _search(self, r: int) -> str:
+        extra = []
+        if r == self.note_room:
+            if not self.note_read:
+                self.note_read = True
+                extra.append(f"a note: 'The vault code is {self.code}. The trail to the vault starts in room "
+                             f"{self.trail_rooms[0]}.' The note crumbles to dust as you finish reading it")
+            else:
+                extra.append("a small pile of dust")
+        if self.note_read and r in self.trail_rooms:
+            k = self.trail_rooms.index(r)
+            self.reached += k == self.reached         # trail rooms count only in order
+            if k < self.reached:
+                extra.append(f"an arrow pointing to room {self.trail_rooms[k + 1]}" if k + 1 < self.trail
+                             else "the vault, with a keypad")
+        self.at_vault = self.reached == self.trail and r == self.trail_rooms[-1]
+        rng = random.Random(self.salt * 131 + r)
         items = [f"{rng.choice(self.ITEMS)} #{rng.randrange(1000)}" for _ in range(self.filler)]
-        if r == self.room:
-            items.insert(rng.randrange(len(items)), f"a note: 'the code is in drawer {self.drawer}'")
-        drawers = ", ".join(f"drawer {d}" for d in "ABCDEF")
-        return f"Room {r} contains: " + "; ".join(items) + f". Drawers: {drawers}."
+        for e in extra:
+            items.insert(rng.randrange(len(items) + 1), e)
+        return f"Room {r} contains: " + "; ".join(items) + "."
 
     def step(self, name, args):
         try:
@@ -79,17 +97,12 @@ class VaultEnv(Env):
                 r = int("".join(ch for ch in str(args.get("room", "")) if ch.isdigit()) or -1)
                 if not 1 <= r <= self.n_rooms:
                     return f"There is no {args.get('room')}.", False, False
-                return self._room_text(r), False, False
-            if name == "open_drawer":
-                r = int("".join(ch for ch in str(args.get("room", "")) if ch.isdigit()) or -1)
-                d = str(args.get("drawer", "")).strip().upper()[-1:]
-                if r == self.room and d == self.drawer:
-                    self.opened = True
-                    return f"Inside drawer {d} you find a card: code word '{self.code}'.", False, False
-                return f"Drawer {d} in room {r} is empty.", False, False
+                return self._search(r), False, False
             if name == "submit":
+                if not self.at_vault:
+                    return "There is no vault here.", False, False
                 ok = str(args.get("code", "")).strip().strip("'\"").lower() == self.code
-                return ("Correct!" if ok else "Wrong code."), True, ok
+                return ("The vault opens." if ok else "Wrong code. The keypad locks."), True, ok
         except Exception as e:  # malformed args
             return f"Error: {e}", False, False
         return f"Unknown tool {name}.", False, False
