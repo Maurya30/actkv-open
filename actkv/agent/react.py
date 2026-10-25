@@ -28,10 +28,9 @@ def run_episode(session: ActKVSession, env: Env, fmt, task_idx: int,
             print(f"--- round {rounds} | cache {session.phys} | seen {session.seen}")
             print(text[-400:])
             print(">>", obs[:200])
-        if done:
-            session.end_round()   # policies (e.g. the Fig. 6 recorder) see the final round too
+        session.end_round()   # also on done: policies (e.g. the Fig. 6 recorder) see the final round
+        if done or rounds == env.max_rounds:   # nothing reads an observation after the last round
             break
-        session.end_round()
         session.prefill(fmt.observation(obs))
     st = session.stats
     return {

@@ -149,3 +149,18 @@ def test_sampled_end_token_is_not_cached_and_im_end_is_written(monkeypatch):
     run_episode(s, env, QwenFormat(tok), 0)
     assert tok.eos_token_id not in forwarded
     assert prefilled[1].startswith("<|im_end|>")
+
+
+def test_no_observation_is_prefilled_after_the_last_round(monkeypatch):
+    """An observation after the final round is never read but would inflate trace_len."""
+    tok = CharTok()
+    s = ActKVSession(tiny(), tok, make_policy("full"))
+    prefilled = []
+    real_prefill = s.prefill
+    monkeypatch.setattr(s, "prefill", lambda text, **k: prefilled.append(text) or real_prefill(text, **k))
+    script(monkeypatch, tok, [("a", True), ("b", True), ("c", True)])
+    env = StepEnv()
+    env.max_rounds = 3
+    res = run_episode(s, env, QwenFormat(tok), 0)
+    assert res["rounds"] == 3
+    assert len(prefilled) == 1 + 2            # the prompt, then observations after rounds 1 and 2
