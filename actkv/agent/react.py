@@ -35,6 +35,7 @@ def run_episode(session: ActKVSession, env: Env, fmt, task_idx: int,
     st = session.stats
     return {
         "task": task_idx, "success": bool(success), "rounds": rounds, "invalid": invalid,
+        "protected": session.protected,
         "peak_entries": st.peak_entries, "trace_len": st.trace_len, "compressions": st.compressions,
         "budgets": st.budgets, "ora_lens": st.ora_lens, "seconds": time.time() - t0,
         "transcript": transcript,

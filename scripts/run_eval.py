@@ -52,8 +52,8 @@ def read_rows(path):
 def full_lengths(path):
     lens = {}
     for r in read_rows(path):
-        if r.get("method", "full") == "full":
-            lens.setdefault(r["task"], []).append(r["trace_len"])
+        if r.get("method", "full") == "full":   # evictable tokens: budgets exclude the protected prompt
+            lens.setdefault(r["task"], []).append(r["trace_len"] - r.get("protected", 0))
     return {k: int(statistics.median(v)) for k, v in lens.items()}
 
 
@@ -118,7 +118,8 @@ def main():
     ap.add_argument("--adaptive", action="store_true", help="ActKV Algorithm 2 budget")
     ap.add_argument("--bidirectional", action="store_true", help="extension: allow the budget to shrink")
     ap.add_argument("--budget", type=int, help="fixed budget in entries (excl. protected prefix)")
-    ap.add_argument("--budget-ratio", type=float, help="per-trace budget = ratio * FullKV trace length")
+    ap.add_argument("--budget-ratio", type=float,
+                    help="per-trace budget = ratio * FullKV trace length (excluding the protected prompt)")
     ap.add_argument("--full-results", help="FullKV jsonl, needed with --budget-ratio")
     ap.add_argument("--slack", type=int, default=None,
                     help="baselines: compress mid-round past budget+slack (default: mean FullKV ORA length)")

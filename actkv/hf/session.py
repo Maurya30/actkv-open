@@ -57,7 +57,7 @@ def sample(logits: torch.Tensor, sp: SamplingParams, gen: torch.Generator | None
 @dataclass
 class SessionStats:
     peak_entries: int = 0           # max physical cache length (per layer) reached
-    trace_len: int = 0              # total tokens processed = sum of ORA lengths
+    trace_len: int = 0              # total tokens processed = protected prompt + sum of ORA lengths
     ora_lens: list[int] = field(default_factory=list)
     budgets: list[int] = field(default_factory=list)
     compressions: int = 0
@@ -133,6 +133,7 @@ class ActKVSession:
         self.last_logits = out.logits[0, -1]
         if protected:
             self.protected = self.phys
+            self.round_tokens -= ids.numel()   # never evicted, and part of no ORA round
 
     # ------------------------------------------------------------------ generation
     @torch.no_grad()

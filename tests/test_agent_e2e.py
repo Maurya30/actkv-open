@@ -164,3 +164,15 @@ def test_no_observation_is_prefilled_after_the_last_round(monkeypatch):
     res = run_episode(s, env, QwenFormat(tok), 0)
     assert res["rounds"] == 3
     assert len(prefilled) == 1 + 2            # the prompt, then observations after rounds 1 and 2
+
+
+def test_round_lengths_exclude_the_protected_prompt(monkeypatch):
+    """The prompt is never evicted and is not part of any ORA round (it would inflate the baselines' slack)."""
+    tok = CharTok()
+    s = ActKVSession(tiny(), tok, make_policy("full"))
+    script(monkeypatch, tok, [("a", True), ("b", True)])
+    env = StepEnv()
+    env.max_rounds = 2
+    res = run_episode(s, env, QwenFormat(tok), 0)
+    assert res["protected"] > 0
+    assert res["protected"] + sum(res["ora_lens"]) == res["trace_len"]

@@ -86,3 +86,9 @@ def test_no_thinking_uses_qwen_non_thinking_sampling(tmp_path, monkeypatch):
     run_eval.main()
     sp = seen[0]
     assert (sp.temperature, sp.top_p, sp.top_k) == (0.7, 0.8, 20)
+
+
+def test_ratio_budget_base_excludes_the_protected_prompt(tmp_path):
+    """Budgets exclude the protected prefix, so the ratio base must too."""
+    run_eval = load_script("scripts/run_eval.py")
+    assert run_eval.full_lengths(_full_file(tmp_path)) == {0: 800}     # trace_len 1000 - protected 200
