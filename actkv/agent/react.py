@@ -32,7 +32,7 @@ def run_episode(session: ActKVSession, env: Env, fmt, task_idx: int,
             session.end_round()   # policies (e.g. the Fig. 6 recorder) see the final round too
             break
         session.end_round()
-        session.prefill(fmt.observation(obs, assistant_closed=session.ended_with_eos))
+        session.prefill(fmt.observation(obs))
     st = session.stats
     return {
         "task": task_idx, "success": bool(success), "rounds": rounds, "invalid": invalid,

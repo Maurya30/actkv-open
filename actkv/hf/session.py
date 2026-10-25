@@ -141,7 +141,6 @@ class ActKVSession:
         self.detector.reset()
         eos = self._eos_ids()
         text, ids = "", []
-        self.ended_with_eos = False
         for _ in range(max_new_tokens):
             logits = self.last_logits
             if self.budget is not None:
@@ -149,9 +148,8 @@ class ActKVSession:
             t = sample(logits, self.sp, self.gen)
             ids.append(t)
             if t in eos:
-                self.ended_with_eos = True
-                # feed EOS so the cache matches the text the chat template expects
-                self.last_logits = self._forward(torch.tensor([t]), False).logits[0, -1]
+                # not cached: Qwen3 has two end tokens and only <|im_end|> closes a turn, so the next
+                # observation always writes <|im_end|> itself
                 break
             piece = self.tok.decode([t], skip_special_tokens=False)
             text += piece

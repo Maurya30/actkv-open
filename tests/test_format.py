@@ -9,11 +9,11 @@ TOOL_TURN = "<|im_end|>\n<|im_start|>user\n<tool_response>\nroom 3\n</tool_respo
 
 
 def test_no_thinking_applies_to_every_turn():
-    assert QwenFormat(None, enable_thinking=False).observation("room 3", False) == TOOL_TURN + NO_THINK
+    assert QwenFormat(None, enable_thinking=False).observation("room 3") == TOOL_TURN + NO_THINK
 
 
 def test_thinking_turn_matches_the_template():
-    assert QwenFormat(None).observation("room 3", False) == TOOL_TURN + "<|im_start|>assistant\n"
+    assert QwenFormat(None).observation("room 3") == TOOL_TURN + "<|im_start|>assistant\n"
 
 
 class StrictTok:

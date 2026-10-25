@@ -133,3 +133,19 @@ def test_aav_skips_a_round_without_action(monkeypatch):
     pol, res = aav_episode(monkeypatch, [call("look"), ("no tool call", True)], max_rounds=2)
     assert res["rounds"] == 2 and res["invalid"] == 1
     assert len(pol.rounds) == 1
+
+
+def test_sampled_end_token_is_not_cached_and_im_end_is_written(monkeypatch):
+    """Qwen3 has two end tokens; only <|im_end|> closes a turn, so we always write it ourselves."""
+    tok = CharTok()
+    s = ActKVSession(tiny(), tok, make_policy("full"))
+    forwarded, prefilled = [], []
+    real_forward, real_prefill = s._forward, s.prefill
+    monkeypatch.setattr(s, "_forward", lambda ids, want_attn: forwarded.extend(ids.tolist()) or real_forward(ids, want_attn))
+    monkeypatch.setattr(s, "prefill", lambda text, **k: prefilled.append(text) or real_prefill(text, **k))
+    script(monkeypatch, tok, [("no tool call", True), ("still none", True)])
+    env = StepEnv()
+    env.max_rounds = 2
+    run_episode(s, env, QwenFormat(tok), 0)
+    assert tok.eos_token_id not in forwarded
+    assert prefilled[1].startswith("<|im_end|>")

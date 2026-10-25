@@ -28,10 +28,9 @@ class QwenFormat:
         return self.tok.apply_chat_template(msgs, tools=tools, add_generation_prompt=True,
                                             tokenize=False, enable_thinking=self.enable_thinking)
 
-    def observation(self, obs: str, assistant_closed: bool) -> str:
-        close = "" if assistant_closed else "<|im_end|>"
+    def observation(self, obs: str) -> str:
         no_think = "" if self.enable_thinking else "<think>\n\n</think>\n\n"   # on every turn, as the template
-        return (f"{close}\n<|im_start|>user\n<tool_response>\n{obs}\n</tool_response>"
+        return (f"<|im_end|>\n<|im_start|>user\n<tool_response>\n{obs}\n</tool_response>"
                 f"<|im_end|>\n<|im_start|>assistant\n{no_think}")
 
     def parse_action(self, text: str) -> dict | None:
