@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from actkv.action_region import ActionRegionDetector  # noqa: E402
 from actkv.agent import QwenFormat, make_env, run_episode  # noqa: E402
+from actkv.agent.envs import ALFWORLD_SPLITS  # noqa: E402
 from actkv.analysis import AAVRecorder, classify  # noqa: E402
 from actkv.budget import FixedBudget  # noqa: E402
 from actkv.hf import ActKVSession, SamplingParams  # noqa: E402
@@ -28,16 +29,20 @@ def main():
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--env", default="vault", choices=["vault", "alfworld"])
-    ap.add_argument("--alfworld-config", default="configs/alfworld.yaml")
+    ap.add_argument("--alfworld-config", default=None,
+                    help="alfworld base_config.yaml (default: built-in, data under $ALFWORLD_DATA)")
+    ap.add_argument("--alfworld-split", default="eval_out_of_distribution", choices=sorted(ALFWORLD_SPLITS))
     ap.add_argument("--n-tasks", type=int, default=20)
     ap.add_argument("--only-success", action="store_true", help="use FullKV-correct traces only (as the paper)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
+    env = (make_env("alfworld", config_path=args.alfworld_config, split=args.alfworld_split)
+           if args.env == "alfworld" else make_env("vault", n_tasks=args.n_tasks))
+    if args.n_tasks > len(env):
+        ap.error(f"--n-tasks {args.n_tasks} exceeds the {len(env)} available")
     model, tok = load_model(args.model, args.dtype, args.device)
     fmt = QwenFormat(tok)
-    env = (make_env("alfworld", config_path=args.alfworld_config, n_tasks=args.n_tasks)
-           if args.env == "alfworld" else make_env("vault", n_tasks=args.n_tasks))
     agg = defaultdict(lambda: defaultdict(float))
     used = 0
     for task in range(args.n_tasks):

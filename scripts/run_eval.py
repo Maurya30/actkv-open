@@ -11,8 +11,8 @@ Examples
   python scripts/run_eval.py --model Qwen/Qwen3-8B --env vault --method snapkv --budget-ratio 0.1 \
       --full-results results/full.jsonl --out results/snapkv_10.jsonl
 
-  # ALFWorld (after `pip install alfworld && alfworld-download`)
-  python scripts/run_eval.py --env alfworld --alfworld-config configs/alfworld.yaml ...
+  # ALFWorld (after `pip install alfworld && alfworld-download`); task i = i-th game of the split
+  python scripts/run_eval.py --env alfworld --alfworld-split eval_out_of_distribution ...
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from actkv.action_region import ActionRegionDetector  # noqa: E402
 from actkv.agent import QwenFormat, make_env, run_episode  # noqa: E402
+from actkv.agent.envs import ALFWORLD_SPLITS  # noqa: E402
 from actkv.budget import ConfidenceBudget, FixedBudget  # noqa: E402
 from actkv.config import BudgetConfig, EvictionConfig  # noqa: E402
 from actkv.eviction import make_policy  # noqa: E402
@@ -68,6 +69,8 @@ def run_config(args) -> dict:
         cfg.update(decay=None, top_p_hit=None, head_reduce=None)
     if args.method in ("full", "actkv"):  # only the baselines compress mid-round
         cfg.update(slack=None)
+    if args.env == "alfworld":
+        cfg.update(alfworld_split=args.alfworld_split, alfworld_config=args.alfworld_config)
     return cfg
 
 
@@ -97,6 +100,9 @@ def check_args(ap, args):
         ap.error(f"--full-results {args.full_results} does not exist")
     if args.n_tasks <= 0 or args.runs <= 0:
         ap.error("--n-tasks and --runs must be positive")
+    if args.alfworld_config and not os.path.isfile(args.alfworld_config):
+        ap.error(f"--alfworld-config {args.alfworld_config} does not exist "
+                 "(alfworld's configs/base_config.yaml lives in its GitHub repo, not the pip package)")
 
 
 def main():
@@ -105,7 +111,9 @@ def main():
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--env", default="vault", choices=["vault", "alfworld"])
-    ap.add_argument("--alfworld-config", default="configs/alfworld.yaml")
+    ap.add_argument("--alfworld-config", default=None,
+                    help="alfworld base_config.yaml (default: built-in, data under $ALFWORLD_DATA)")
+    ap.add_argument("--alfworld-split", default="eval_out_of_distribution", choices=sorted(ALFWORLD_SPLITS))
     ap.add_argument("--method", default="actkv", choices=["full", "actkv", "snapkv", "streaming"])
     ap.add_argument("--adaptive", action="store_true", help="ActKV Algorithm 2 budget")
     ap.add_argument("--bidirectional", action="store_true", help="extension: allow the budget to shrink")
@@ -128,10 +136,12 @@ def main():
     args = ap.parse_args()
     check_args(ap, args)
 
+    env = (make_env("alfworld", config_path=args.alfworld_config, split=args.alfworld_split)
+           if args.env == "alfworld" else make_env("vault", n_tasks=args.start + args.n_tasks))
+    if args.start + args.n_tasks > len(env):
+        ap.error(f"tasks {args.start}..{args.start + args.n_tasks - 1} exceed the {len(env)} available")
     model, tok = load_model(args.model, args.dtype, args.device)
     fmt = QwenFormat(tok, enable_thinking=not args.no_thinking)
-    env = (make_env("alfworld", config_path=args.alfworld_config, n_tasks=args.n_tasks)
-           if args.env == "alfworld" else make_env("vault", n_tasks=args.start + args.n_tasks))
 
     per_task = full_lengths(args.full_results) if args.budget_ratio is not None else {}
     slack = args.slack
@@ -170,7 +180,8 @@ def main():
                                    sampling=SamplingParams(greedy=args.greedy),
                                    mid_round_slack=slack, seed=1000 * task + run)
             res = run_episode(session, env, fmt, task, args.max_new_tokens, args.verbose)
-            res.update(run=run, method=args.method, model=args.model, config=cfg, config_id=cid)
+            res.update(run=run, method=args.method, model=args.model, config=cfg, config_id=cid,
+                       game=getattr(env, "game_id", None))
             # the file is created by the first finished episode, so failed runs leave nothing behind
             os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
             with open(args.out, "a") as out:

@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import copy
+import os
 import random
 
 from .format import tool
@@ -93,11 +95,56 @@ class VaultEnv(Env):
         return f"Unknown tool {name}.", False, False
 
 
+ALFWORLD_SPLITS = {"train": "data_path", "eval_in_distribution": "eval_id_data_path",
+                   "eval_out_of_distribution": "eval_ood_data_path"}
+# The keys AlfredTWEnv reads, from alfworld's configs/base_config.yaml (that file is not shipped in
+# the pip package). $ALFWORLD_DATA defaults to ~/.cache/alfworld (alfworld sets it on import).
+ALFWORLD_DEFAULT_CONFIG = {
+    "dataset": {"data_path": "$ALFWORLD_DATA/json_2.1.1/train",
+                "eval_id_data_path": "$ALFWORLD_DATA/json_2.1.1/valid_seen",
+                "eval_ood_data_path": "$ALFWORLD_DATA/json_2.1.1/valid_unseen",
+                "num_train_games": -1, "num_eval_games": -1},
+    "env": {"type": "AlfredTWEnv", "task_types": [1, 2, 3, 4, 5, 6], "goal_desc_human_anns_prob": 0.0,
+            "domain_randomization": False, "expert_type": "handcoded"},
+}
+
+
+def _alfworld_game_files(config_path: str | None, split: str) -> list[str]:
+    if split not in ALFWORLD_SPLITS:
+        raise ValueError(f"unknown ALFWorld split {split!r}; expected one of {sorted(ALFWORLD_SPLITS)}")
+    if config_path:
+        import yaml
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+    else:
+        config = copy.deepcopy(ALFWORLD_DEFAULT_CONFIG)
+    # import the class from its module: alfworld>=0.4 no longer re-exports it from the package
+    from alfworld.agents.environment.alfred_tw_env import AlfredTWEnv
+    config["dataset"]["num_train_games"] = config["dataset"]["num_eval_games"] = -1  # we sort, then index
+    data_dir = os.path.expandvars(config["dataset"][ALFWORLD_SPLITS[split]])
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f"ALFWorld data not found at {data_dir!r}: run `alfworld-download` "
+                                "(data goes to $ALFWORLD_DATA, default ~/.cache/alfworld) or pass --alfworld-config")
+    return AlfredTWEnv(config, train_eval=split).game_files
+
+
+def _alfworld_tw_env(max_steps: int):
+    """One TextWorld wrapper stack (as textworld.gym builds it) that can load any game file."""
+    import textworld
+    from alfworld.agents.environment.alfred_tw_env import AlfredDemangler, AlfredInfos
+    from textworld.envs.wrappers import Filter, GenericEnvironment, Limit
+    env = GenericEnvironment(textworld.EnvInfos(won=True, admissible_commands=True, extras=["gamefile"]))
+    env = Limit(env, max_episode_steps=max_steps)
+    return Filter(AlfredInfos(AlfredDemangler(shuffle=False)(env)))
+
+
 class ALFWorldEnv(Env):
     """ALFWorld text environment (requires `pip install alfworld` and `alfworld-download`).
 
-    Single tool `act(command)`; observations include the admissible commands, as in common
-    ReAct setups. Success = info['won'].
+    Task i is always game i of the split's game files in sorted order, so repeated runs, resume and
+    per-task budgets refer to the same game (ALFWorld's own env hands out a shuffled game per reset).
+    Single tool `act(command)`; observations include the admissible commands, as in common ReAct
+    setups. Success = info['won'].
     """
 
     system = ("You are an agent in a household. Solve the task by issuing one text command per turn "
@@ -105,35 +152,38 @@ class ALFWorldEnv(Env):
     tools = [tool("act", "Issue a text command in the environment.", command="an admissible command")]
     max_rounds = 50
 
-    def __init__(self, config_path: str, split: str = "eval_out_of_distribution", n_tasks: int = 134):
-        import alfworld.agents.environment as environment  # lazy
-        import yaml
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-        env_cls = getattr(environment, config["env"]["type"])
-        self.env = env_cls(config, train_eval=split).init_env(batch_size=1)
-        self.n_tasks = n_tasks
+    def __init__(self, config_path: str | None = None, split: str = "eval_out_of_distribution",
+                 *, game_files: list[str] | None = None, tw_env=None):
+        if game_files is None:
+            game_files = _alfworld_game_files(config_path, split)
+        elif split not in ALFWORLD_SPLITS:
+            raise ValueError(f"unknown ALFWorld split {split!r}; expected one of {sorted(ALFWORLD_SPLITS)}")
+        self.game_files = sorted(game_files)
+        if not self.game_files:   # ALFWorld itself would spin forever on an empty game list
+            raise RuntimeError("no ALFWorld games found")
+        self.tw = tw_env if tw_env is not None else _alfworld_tw_env(self.max_rounds)
+        self.game_id = None
 
     def __len__(self):
-        return self.n_tasks
+        return len(self.game_files)
 
     def reset(self, i: int) -> str:
-        # ALFWorld iterates its own game list; `i` is only used for bookkeeping
-        obs, info = self.env.reset()
-        self.admissible = info["admissible_commands"][0]
-        text = obs[0]
-        return text + "\n\nAdmissible commands: " + ", ".join(self.admissible)
+        game = self.game_files[i]
+        self.tw.load(game)
+        obs, info = self.tw.reset()
+        self.game_id = "/".join(game.split(os.sep)[-3:-1])     # <task dir>/<trial dir>
+        self.admissible = list(info["admissible_commands"])
+        return obs + "\n\nAdmissible commands: " + ", ".join(self.admissible)
 
     def step(self, name, args):
         if name != "act":
             return f"Unknown tool {name}. Use act(command).", False, False
         cmd = str(args.get("command", "")).strip()
-        obs, _, dones, info = self.env.step([cmd])
-        self.admissible = info["admissible_commands"][0]
-        won = bool(info["won"][0])
-        text = obs[0] + "\n\nAdmissible commands: " + ", ".join(self.admissible)
-        return text, bool(dones[0]) or won, won
+        obs, _, done, info = self.tw.step(cmd)
+        self.admissible = list(info["admissible_commands"])
+        won = bool(info["won"])
+        text = obs + "\n\nAdmissible commands: " + ", ".join(self.admissible)
+        return text, bool(done) or won, won
 
 
 def make_env(name: str, **kw) -> Env:
