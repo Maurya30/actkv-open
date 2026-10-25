@@ -54,3 +54,36 @@ def test_episode_counts_come_from_the_data(tmp_path):
     assert update.main(["--results", str(res), "--readme", str(readme)]) == 0
     text = readme.read_text()
     assert "| actkv (adaptive) | 23 | 46 |" in text and "one run each" not in text
+
+
+BENCH = {"kernel_path": "triton", "note": "compiled Triton kernels", "device": "cuda", "gpu": "NVIDIA A100-SXM4-80GB",
+         "dtype": "float16", "torch": "2.9", "triton": "3.5", "n_layers": 1, "block_size": 16, "kv_heads": 8,
+         "q_heads": 32, "head_dim": 128, "iters": 5, "warmup": 1,
+         "rows": [{"n": 1024, "budget": 512, "r": 4, "actkv_ms": 2.0, "gather_ms": 3.0, "actkv_extra_mb": 1.5,
+                   "gather_extra_mb": 9.0, "masks_match": True, "outputs_match": True}]}
+
+
+def test_benchmark_table_is_rendered_from_a_compiled_triton_run(tmp_path):
+    update = load_script("scripts/update_readme.py")
+    res, readme = fixture(tmp_path)
+    (res / "bench_kernels.json").write_text(json.dumps(BENCH))
+    assert update.main(["--results", str(res), "--readme", str(readme)]) == 0
+    assert "| 1024 → 512 | 4 | 2.000 | 3.000 | 1.50x | 1.5 | 9.0 | yes |" in readme.read_text()
+
+
+def test_a_benchmark_that_did_not_run_compiled_triton_is_refused(tmp_path):
+    update = load_script("scripts/update_readme.py")
+    res, readme = fixture(tmp_path)                       # env.json and episodes are CUDA
+    (res / "bench_kernels.json").write_text(json.dumps({**BENCH, "kernel_path": "torch-fallback"}))
+    assert update.main(["--results", str(res), "--readme", str(readme)]) == 1
+    assert readme.read_text() == README
+
+
+def test_a_config_with_any_non_cuda_episode_is_refused(tmp_path):
+    update = load_script("scripts/update_readme.py")
+    res, readme = fixture(tmp_path)                       # env.json is CUDA
+    summary = json.loads((res / "vault" / "summary.json").read_text())
+    summary["configs"][0]["devices"] = ["cpu", "cuda"]
+    (res / "vault" / "summary.json").write_text(json.dumps(summary))
+    assert update.main(["--results", str(res), "--readme", str(readme)]) == 1
+    assert readme.read_text() == README
