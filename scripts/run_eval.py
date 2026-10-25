@@ -240,6 +240,7 @@ def main():
         os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
         with open(out, "a") as f:
             f.write(json.dumps(res) + "\n")
+        done.add((task, run))
         print(f"{os.path.basename(out)} task {task} run {run}: success={res['success']} rounds={res['rounds']} "
               f"peak={res['peak_entries']} trace={res['trace_len']} {res['seconds']:.0f}s")
         return res
@@ -247,10 +248,16 @@ def main():
     # task-major: every config gets task t before any config gets task t+1, so whenever the run
     # stops (time budget, preemption) all configs have run the same tasks
     tasks = range(args.start, args.start + args.n_tasks)
-    spent, finished, t0 = 0.0, 0, time.time()
+
+    def complete(t):
+        return all((t, run) in done for *_, done in states for run in range(args.runs))
+
+    spent, t0 = 0.0, time.time()
     for k, task in enumerate(tasks):
-        if args.hours and finished:
-            per_task = spent / finished
+        started = any((task, run) in done for *_, done in states for run in range(args.runs))
+        if args.hours and not started:   # a task left half-done by a preempted run is finished first
+            n_done = sum(map(complete, tasks))
+            per_task = (used + spent) / n_done if n_done else 0.0
             if used + spent + per_task > args.hours * 3600:
                 print(f"stopping before task {task}: another task (~{hms(per_task)}) would pass the "
                       f"{args.hours:g}h budget ({hms(used + spent)} used)")
@@ -262,11 +269,11 @@ def main():
                 if res is not None:
                     spent += res["seconds"]
                     ran = True
-        finished += ran
         if ran and len(jobs) > 1:
-            per_task = spent / finished
+            n_done = sum(map(complete, tasks))
+            per_task = (used + spent) / max(n_done, 1)
             print(f"[{k + 1}/{len(tasks)} tasks] {hms(used + spent)} used, {hms(per_task)} per task, "
-                  f"ETA for all tasks {hms((len(tasks) - k - 1) * per_task)} (wall {hms(time.time() - t0)})")
+                  f"ETA for all tasks {hms((len(tasks) - n_done) * per_task)} (wall {hms(time.time() - t0)})")
 
 
 if __name__ == "__main__":

@@ -142,3 +142,37 @@ def test_baseline_slack_is_that_tasks_mean_fullkv_round_length(tmp_path, monkeyp
                                       "--out", str(tmp_path / "o.jsonl")])
     run_eval.main()
     assert slacks == [20, 100]
+
+
+def test_resumed_sweep_finishes_the_partial_task_then_respects_the_budget(tmp_path, monkeypatch):
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: (tiny(), CharTok()))
+    calls = []
+
+    def episode(session, env, fmt, task, *a, **k):        # every episode "takes" 100 s
+        calls.append(task)
+        if crash_after and len(calls) > crash_after:
+            raise KeyboardInterrupt("pod preempted")
+        return {**_stub_episode(session, env, fmt, task), "seconds": 100.0}
+
+    monkeypatch.setattr(run_eval, "run_episode", episode)
+    sweep = _write(tmp_path / "sweep.json", [{"name": "full", "method": "full"},
+                                             {"name": "stream", "method": "streaming", "budget": 64}])
+    out = tmp_path / "res"
+
+    def run(hours):
+        monkeypatch.setattr(sys, "argv", ["run_eval.py", "--sweep", sweep, "--out-dir", str(out), "--n-tasks", "5",
+                                          "--runs", "1", "--device", "cpu", "--hours", str(hours / 3600)])
+        run_eval.main()
+
+    def tasks(name):
+        return [json.loads(line)["task"] for line in (out / f"{name}.jsonl").read_text().splitlines()]
+
+    crash_after = 3                       # preempted after task 0 (both configs) and task 1 (full only)
+    with pytest.raises(KeyboardInterrupt):
+        run(520)
+    crash_after = None
+    run(520)                              # finish task 1, then 400 s used + 200 s/task > 520 s: stop
+    assert tasks("full") == tasks("stream") == [0, 1]
+    run(180)                              # budget already spent: no new task starts
+    assert tasks("full") == tasks("stream") == [0, 1]
