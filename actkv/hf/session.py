@@ -49,6 +49,8 @@ def sample(logits: torch.Tensor, sp: SamplingParams, gen: torch.Generator | None
         cut = torch.cumsum(sp_, 0) - sp_ > sp.top_p
         sp_[cut] = 0
         probs = torch.zeros_like(probs).scatter(0, idx, sp_)
+    # the seeded generator lives on the CPU, so draw there; a seed then gives the same draw on any device
+    probs = probs.cpu()
     return int(torch.multinomial(probs / probs.sum(), 1, generator=gen))
 
 
