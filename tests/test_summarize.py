@@ -94,3 +94,14 @@ def test_paired_delta_vs_fullkv_with_sample_sizes(tmp_path, monkeypatch):
     assert s["delta_ci"][0] < -0.05 and s["delta_ci"][1] <= 0.0
     f = res["FullKV"]
     assert f["delta_vs_full"] == 0.0 and f["delta_ci"] == [0.0, 0.0] and f["acc_ci"] == [1.0, 1.0]
+
+
+def test_a_fullkv_file_with_several_settings_is_rejected(tmp_path, monkeypatch):
+    import pytest
+    summarize = load_script("scripts/summarize.py")
+    full = write(tmp_path / "full.jsonl", [row(0, True, {**FULL, "max_new_tokens": 1}),
+                                           row(0, True, {**FULL, "max_new_tokens": 3})])
+    monkeypatch.setattr(sys, "argv", ["summarize.py", "--full", full, full])
+    with pytest.raises(SystemExit) as e:
+        summarize.main()
+    assert e.value.code == 2

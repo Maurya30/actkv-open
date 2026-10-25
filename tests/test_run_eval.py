@@ -199,3 +199,37 @@ def test_sweep_ratio_budget_uses_all_fullkv_runs_of_the_task(tmp_path, monkeypat
                                       "--n-tasks", "1", "--runs", "2", "--device", "cpu"])
     run_eval.main()
     assert budgets == [150, 150]          # 0.5 * median(300 - 100, 500 - 100)
+
+
+def test_ratio_budget_uses_the_fullkv_run_with_the_same_settings(tmp_path, monkeypatch):
+    """A results file can hold FullKV runs of several settings; budgets must come from the matching one."""
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: (tiny(), CharTok()))
+    budgets = []
+
+    def episode(session, env, fmt, task, max_new_tokens, *a):
+        if session.budget is not None:
+            budgets.append(session.budget.current)
+        return {**_stub_episode(session, env, fmt, task), "trace_len": 1000 * max_new_tokens + 100, "protected": 100}
+
+    monkeypatch.setattr(run_eval, "run_episode", episode)
+    full = str(tmp_path / "full.jsonl")
+    common = ["--n-tasks", "1", "--runs", "1", "--device", "cpu"]
+    for argv in (["--method", "full", "--max-new-tokens", "1", "--out", full],
+                 ["--method", "full", "--max-new-tokens", "3", "--out", full],
+                 ["--method", "streaming", "--budget-ratio", "0.2", "--full-results", full,
+                  "--max-new-tokens", "3", "--out", str(tmp_path / "s.jsonl")]):
+        monkeypatch.setattr(sys, "argv", ["run_eval.py", *argv, *common])
+        run_eval.main()
+    assert budgets == [600]               # 0.2 * (3100 - 100), not the median over both FullKV settings
+
+
+def test_config_id_does_not_depend_on_how_the_fullkv_path_is_spelled():
+    import argparse
+    run_eval = load_script("scripts/run_eval.py")
+    base = dict(model="m", dtype="bfloat16", env="vault", method="streaming", adaptive=False, bidirectional=False,
+                budget=None, budget_ratio=0.1, slack=None, decay=0.5, top_p_hit=0.9, head_reduce="mean",
+                max_new_tokens=8, greedy=False, no_thinking=True)
+    ids = {run_eval.config_id(run_eval.run_config(argparse.Namespace(**base, full_results=p)))
+           for p in ("results/vault/full.jsonl", "./results/vault/full.jsonl", "results//vault/full.jsonl")}
+    assert len(ids) == 1

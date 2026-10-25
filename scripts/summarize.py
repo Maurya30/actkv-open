@@ -135,6 +135,8 @@ def main():
     ap.add_argument("--json", help="write the table (with sample sizes and CIs) as JSON")
     args = ap.parse_args()
     full_rows = load(args.full)
+    if len({r.get("config_id") for r in full_rows}) > 1:
+        ap.error(f"{args.full} holds FullKV runs with different settings; summarize one setting at a time")
     groups, configs = {}, {}          # rows grouped by run config, in order of first appearance
     for path in dict.fromkeys([args.full, *args.files]):
         for r in load(path):

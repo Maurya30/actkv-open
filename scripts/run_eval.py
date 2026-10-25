@@ -53,20 +53,25 @@ def read_rows(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
-def full_lengths(path):
+def full_rows(path, full_id=None):
+    """FullKV rows of `path`; with full_id, not those run with other settings (see full_config_id).
+    Rows without a config_id (hand-made files) can't be told apart and are kept."""
+    return [r for r in read_rows(path) if r.get("method", "full") == "full"
+            and (full_id is None or r.get("config_id") in (None, full_id))]
+
+
+def full_lengths(path, full_id=None):
     lens = {}
-    for r in read_rows(path):
-        if r.get("method", "full") == "full":   # evictable tokens: budgets exclude the protected prompt
-            lens.setdefault(r["task"], []).append(r["trace_len"] - r.get("protected", 0))
+    for r in full_rows(path, full_id):   # evictable tokens: budgets exclude the protected prompt
+        lens.setdefault(r["task"], []).append(r["trace_len"] - r.get("protected", 0))
     return {k: int(statistics.median(v)) for k, v in lens.items()}
 
 
-def full_ora_means(path):
+def full_ora_means(path, full_id=None):
     """Mean FullKV ORA length per task: the baselines' mid-round slack (L-bar) for that task."""
     ora = {}
-    for r in read_rows(path):
-        if r.get("method", "full") == "full":
-            ora.setdefault(r["task"], []).extend(r["ora_lens"])
+    for r in full_rows(path, full_id):
+        ora.setdefault(r["task"], []).extend(r["ora_lens"])
     return {k: int(statistics.mean(v)) for k, v in ora.items() if v}
 
 
@@ -74,7 +79,8 @@ def run_config(args) -> dict:
     """Every setting that can change an episode's outcome; resume and summaries key on it."""
     cfg = {"model": args.model, "dtype": args.dtype, "env": args.env, "method": args.method,
            "adaptive": args.adaptive, "bidirectional": args.bidirectional, "budget": args.budget,
-           "budget_ratio": args.budget_ratio, "full_results": args.full_results,
+           "budget_ratio": args.budget_ratio,
+           "full_results": os.path.basename(args.full_results) if args.full_results else None,
            "slack": args.slack if args.slack is not None else ("fullkv-task-mean" if args.full_results else None),
            "decay": args.decay, "top_p_hit": args.top_p_hit, "head_reduce": args.head_reduce,
            "max_new_tokens": args.max_new_tokens, "greedy": args.greedy, "no_thinking": args.no_thinking}
@@ -89,6 +95,13 @@ def run_config(args) -> dict:
 
 def config_id(cfg: dict) -> str:
     return hashlib.sha1(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def full_config_id(args) -> str:
+    """config_id of the FullKV run with the same shared settings (model, env, tokens, ...) as `args`."""
+    full = dict(vars(args), method="full", adaptive=False, bidirectional=False, budget=None,
+                budget_ratio=None, full_results=None, slack=None)
+    return config_id(run_config(argparse.Namespace(**full)))
 
 
 def check_args(ap, args, produced=()):
@@ -215,7 +228,7 @@ def main():
         elif c.adaptive:
             budget = ConfidenceBudget(BudgetConfig(bidirectional=c.bidirectional))
         elif c.budget_ratio is not None:
-            base = full_lengths(c.full_results).get(task) if os.path.exists(c.full_results) else None
+            base = full_lengths(c.full_results, full_config_id(c)).get(task) if os.path.exists(c.full_results) else None
             if base is None:
                 print(f"skip {os.path.basename(out)} task {task}: no FullKV length")
                 return None
@@ -224,7 +237,8 @@ def main():
             budget = FixedBudget(c.budget)
         slack = c.slack
         if slack is None and c.full_results and c.method in ("snapkv", "streaming"):
-            slack = full_ora_means(c.full_results).get(task) if os.path.exists(c.full_results) else None
+            slack = (full_ora_means(c.full_results, full_config_id(c)).get(task)
+                     if os.path.exists(c.full_results) else None)
             if slack is None:
                 print(f"skip {os.path.basename(out)} task {task}: no FullKV ORA lengths")
                 return None
