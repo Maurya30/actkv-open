@@ -15,12 +15,11 @@
 ```bash
 cd /workspace
 git clone https://github.com/Maurya30/actkv-open && cd actkv-open
-export HF_HOME=/workspace/hf              # keep the ~16 GB model download on the volume
 tmux new -s run                           # keeps running if your connection drops (reattach: tmux attach -t run)
-bash scripts/run_a100.sh 2>&1 | tee -a run.log
+bash scripts/run_a100.sh 2>&1 | tee -a /workspace/run.log
 ```
 
-The script installs the package with `.[triton,dev,eval]` into the pod's Python, so no separate setup is needed. Qwen3-8B is not gated, so no Hugging Face token is needed.
+The script installs the package with `.[triton,dev,eval]` into the pod's Python on every run (a stop wipes the container disk, so a resumed run reinstalls). It also keeps the model cache (`HF_HOME`, about 16 GB) and the ALFWorld data (`ALFWORLD_DATA`) under `/workspace`, so those survive a stop. Qwen3-8B is not gated, so no Hugging Face token is needed.
 
 Progress is printed after every task: time used, time per task and an ETA. If the pod restarts or you stop the script, run the same command again. Finished steps are skipped, and the sweeps continue from the last finished episode, counting the time already spent against their budgets.
 
