@@ -7,7 +7,7 @@ from conftest import DEVICE
 from actkv.kernels import compaction, lse_attn
 from actkv.kernels.compaction import apply_copies, apply_copies_ref, plan_compaction
 from actkv.kernels.lse_attn import action_scores, action_scores_ref, paged_decode_attention_ref
-from actkv.paged import PagedKVCache
+from actkv.paged import PagedKVCache, keep_mask_from_scores
 
 # Without triton, action_scores / apply_copies fall back to the torch references, so a kernel-vs-reference
 # test would compare the reference with itself and pass no matter what.
@@ -151,3 +151,32 @@ def test_attention_is_invariant_to_compaction_permutation():
     cache.compact(0, keep)
     got, _ = cache.decode_attention([0], q)
     torch.testing.assert_close(got, want, rtol=1e-4, atol=1e-5)
+
+
+def test_evict_keeps_the_protected_prefix_and_the_top_scored_tokens():
+    cache = _filled_cache([70], hkv=2, d=16, layers=2)
+    k_before, v_before = cache.gather(0, layer=1)
+    scores = 0.1 * torch.rand(2, 2, 70, generator=torch.Generator().manual_seed(3)).to(DEVICE)  # [L, Hkv, S]
+    hot = [5, 17, 40, 69]
+    scores[..., hot] += 1.0
+    perm = cache.evict(0, scores, budget=4, protected=3)
+    assert sorted(perm.tolist()) == [0, 1, 2, *hot]
+    k_after, v_after = cache.gather(0, layer=1)
+    torch.testing.assert_close(k_after, k_before[perm])
+    torch.testing.assert_close(v_after, v_before[perm])
+    assert cache.seq_used[0] == 7 and len(cache.tables[0]) == 1      # 7 tokens fit one 16-slot block
+
+
+def test_evict_within_budget_is_a_no_op():
+    cache = _filled_cache([20])
+    table = list(cache.tables[0])
+    assert cache.evict(0, torch.rand(2, 20, device=DEVICE), budget=20).tolist() == list(range(20))
+    assert cache.tables[0] == table and cache.seq_used[0] == 20
+
+
+def test_keep_mask_reduces_heads_then_averages_layers():
+    scores = torch.zeros(2, 2, 4)        # [layers, kv heads, tokens]
+    scores[0, 0, 1] = 1.0                # one head of one layer likes token 1 a lot
+    scores[:, :, 2] = 0.3                # every head of every layer likes token 2 a bit
+    assert keep_mask_from_scores(scores, 4, budget=1).tolist() == [False, False, True, False]
+    assert keep_mask_from_scores(scores, 4, budget=1, head_reduce="max").tolist() == [False, True, False, False]

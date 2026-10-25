@@ -20,6 +20,28 @@ class OutOfBlocks(RuntimeError):
     pass
 
 
+def keep_mask_from_scores(scores: torch.Tensor, seq_used: int, budget: int, protected: int = 0,
+                          head_reduce: str = "mean") -> torch.Tensor:
+    """Per-token scores -> keep mask [seq_used]: the protected prefix plus the top-`budget` tokens.
+
+    scores: [S], [Hkv, S] or [n_layers, Hkv, S] (what cal_attn accumulates per layer). KV heads are
+    reduced with `head_reduce`, then layers are averaged: a sequence has one block table for all
+    layers, so a paged cache keeps the same tokens in every layer.
+    """
+    if head_reduce not in ("mean", "max"):
+        raise ValueError(head_reduce)
+    s = scores[..., :seq_used].float()
+    if s.dim() >= 2:
+        s = s.amax(-2) if head_reduce == "max" else s.mean(-2)
+        s = s.reshape(-1, seq_used).mean(0)
+    keep = torch.zeros(seq_used, dtype=torch.bool, device=scores.device)
+    keep[:protected] = True
+    k = min(budget, seq_used - protected)
+    if k > 0:
+        keep[protected + torch.topk(s[protected:], k).indices] = True
+    return keep
+
+
 class PagedKVCache:
     def __init__(self, num_blocks: int, block_size: int, n_kv_heads: int, head_dim: int,
                  n_layers: int = 1, dtype=torch.float16, device="cpu"):
@@ -109,3 +131,14 @@ class PagedKVCache:
         self.free.extend(reversed(freed))
         self.seq_used[req] = plan.perm.numel()
         return plan.perm
+
+    def evict(self, req: int, scores: torch.Tensor, budget: int, protected: int = 0,
+              head_reduce: str = "mean") -> torch.Tensor:
+        """Scores -> KeepMask -> Compaction: keep the protected prefix plus the top-`budget` tokens.
+
+        Returns `perm` like compact(); a request already within budget is left untouched.
+        """
+        n = self.seq_used[req]
+        if n - protected <= budget:
+            return torch.arange(n, device=self.device)
+        return self.compact(req, keep_mask_from_scores(scores, n, budget, protected, head_reduce))
