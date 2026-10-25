@@ -10,11 +10,12 @@ Cached keys already carry their RoPE rotation, so evicting or reordering them is
 new tokens keep their true logical positions.
 
 Attention scores for eviction come from `output_attentions=True` on single-token decode steps
-(needs `attn_implementation="eager"`). That is the slow-but-simple path; the paged backend uses
-the LSE-recovery Triton kernel instead (actkv/kernels/lse_attn.py).
+(needs `attn_implementation="eager"`). That is the slow-but-simple path; a paged backend would use
+the LSE-recovery Triton kernel instead (actkv/kernels/lse_attn.py), but none runs a model yet.
 
 Supported: decoder-only models whose cache layers are plain full-attention `DynamicLayer`s
-(Qwen2/2.5/3 dense, Llama, Mistral...). Sliding-window layers (GPT-OSS) are not handled yet.
+(Qwen2/2.5/3 dense, Llama, ...). Sliding-window layers (GPT-OSS, Mistral configs that set
+`sliding_window`) are not handled yet.
 """
 from __future__ import annotations
 

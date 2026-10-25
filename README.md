@@ -12,13 +12,14 @@ Agents run observation, reasoning, action (ORA) loops, so the KV cache grows eve
 |---|---|---|
 | Alg. 1, action-oriented LRFU eviction | `actkv/eviction.py::ActionLRFU` | unit-tested against hand-worked examples |
 | Alg. 2, confidence-driven budget | `actkv/budget.py::ConfidenceBudget` | unit-tested |
-| Alg. 3, LSE-recovery attention kernel | `actkv/kernels/lse_attn.py` (Triton + torch ref) | matches reference (Triton interpreter) |
-| Alg. 4, in-place compaction kernel | `actkv/kernels/compaction.py` (Triton + torch ref) | conflict-freedom, data integrity and block reclamation tested |
-| Paged KV cache (vLLM layout) | `actkv/paged.py` | tested |
-| Baselines: FullKV, SnapKV, StreamingLLM | `actkv/eviction.py` | tested |
-| ReAct agent + HF backend | `actkv/hf/session.py`, `actkv/agent/` | eviction proven equivalent to masked full attention |
-| Fig. 6 access-pattern study | `actkv/analysis.py`, `scripts/access_patterns.py` | tested |
-| Table 1 kernel benchmark | `benchmarks/bench_kernels.py` | runs; real numbers need a GPU |
+| Alg. 3, LSE-recovery attention kernel | `actkv/kernels/lse_attn.py` (Triton + torch ref) | matches the torch reference under the Triton interpreter (`scripts/test_interpreter.sh`); not yet run on a GPU |
+| Alg. 4, in-place compaction kernel | `actkv/kernels/compaction.py` (Triton + torch ref) | conflict-freedom, data integrity and block reclamation tested; Triton kernel checked under the interpreter only |
+| Paged KV cache (vLLM-style layout) | `actkv/paged.py` | standalone model of the per-layer layout and block tables, tested; not a vLLM integration |
+| Scores → keep mask → compaction (paged) | `actkv/paged.py::PagedKVCache.evict` | tested |
+| Baselines: FullKV, SnapKV, StreamingLLM | `actkv/eviction.py` | implemented; tests check shapes, prefix retention and that compression happens |
+| ReAct agent + HF backend | `actkv/hf/session.py`, `actkv/agent/` | logits after eviction match masked full attention to 1e-4 on tiny random models |
+| Fig. 6 access-pattern study | `actkv/analysis.py`, `scripts/access_patterns.py` | recording and classification tested |
+| Table 1 kernel benchmark | `benchmarks/bench_kernels.py` | like-for-like baseline, measured memory, JSON output; real numbers need a CUDA GPU |
 | **Extension:** bidirectional budget | `BudgetConfig(bidirectional=True)` | tested, not in the paper |
 
 R-KV is not included yet.
@@ -27,7 +28,8 @@ R-KV is not included yet.
 
 ```bash
 pip install -e ".[triton,dev]"            # triton installs on Linux only; + ".[eval]" for plots, ".[alfworld]" for ALFWorld
-pytest                                    # 36 tests; on CPU the Triton kernels run in interpreter mode
+pytest                                    # without triton (macOS) the kernel-vs-reference tests skip
+scripts/test_interpreter.sh               # runs those kernel tests under the Triton interpreter in Linux Docker
 ```
 
 ## Run
@@ -57,29 +59,33 @@ python scripts/access_patterns.py --model Qwen/Qwen3-8B --only-success --out res
 python benchmarks/bench_kernels.py --device cuda
 ```
 
-**Environments.** `vault` is an offline toy task built for this repo: long noisy room listings, and a fact found early that is needed several rounds later. It's good for fast iteration. `alfworld` wraps the ALFWorld text env (`pip install alfworld && alfworld-download`, then point `--alfworld-config` at ALFWorld's `base_config.yaml`). The ALFWorld adapter follows the standard API but has not been run in CI yet.
+**Environments.** `vault` is an offline memory task built for this repo, with long noisy room listings. The vault code is on a note that can be read only once, the note says where a trail starts, and the vault at the end of the trail (at least `trail` + 1 rounds later) takes a single submit. The code has 170,000 possible values. `tests/test_vault.py` shows a scripted agent with memory solves every task and the same agent without memory fails every task. `alfworld` wraps the ALFWorld text env (`pip install alfworld && alfworld-download`). Task *i* is game *i* of the split in sorted order (`--alfworld-split`, default `eval_out_of_distribution`, 134 games). The data is read from `$ALFWORLD_DATA` (default `~/.cache/alfworld`) with a built-in copy of the config keys the text env needs; `--alfworld-config` takes ALFWorld's `base_config.yaml` instead. The adapter is tested with fake modules and was run on four real games, but no model has played ALFWorld through it yet.
 
 ## How the HF backend stays correct
 
-After eviction the cache is shorter than the number of tokens seen, so the session tracks two counters: the logical position (for RoPE `position_ids`) and the physical cache length (for `cache_position`). Cached keys already carry their rotation, so dropping or reordering them is safe. `tests/test_hf_session.py` checks that logits after eviction exactly match a full cache with the evicted positions masked, and that reordering the cache changes nothing. Compaction depends on that second property.
+After eviction the cache is shorter than the number of tokens seen, so the session tracks two counters: the logical position (for RoPE `position_ids`) and the physical cache length (passed as `cache_position`). Cached keys already carry their rotation, so dropping or reordering them is safe. `tests/test_hf_session.py` checks that logits after eviction match a full cache with the evicted positions masked, and that reordering the cache changes nothing (compaction depends on that), both to a tolerance of 1e-4 on tiny randomly initialised Qwen3 models. That is a numerical test, not a proof.
 
-Scores come from `output_attentions` on single-token decode steps, which requires `attn_implementation="eager"`. That's simple and model-agnostic but slow. The fast path is the paged kernels.
+Whether `cache_position` matters depends on the transformers version. From 4.56 to 5.3, Qwen3 builds its causal mask from `cache_position`, so the physical counter is load-bearing and the test checks it. From 5.4 on, Qwen3 ignores `cache_position` and takes positions from the cache length, which equals the physical length after eviction anyway; there, the test can't catch a wrong `cache_position`.
+
+Scores come from `output_attentions` on single-token decode steps, which requires `attn_implementation="eager"`. That's simple and model-agnostic but slow. The paged kernels are meant to be the fast path, but no model backend uses them yet (see Known limitations).
 
 ## Choices where the paper is ambiguous
 
 - **Head aggregation.** Compaction moves whole slots (all heads), so each token needs one score per layer. Scores are max over the GQA group (as in Alg. 3) and then **mean over KV heads** (`head_reduce="max"` is available).
-- **Per-layer keep sets, equal size.** Each layer picks its own top-B entries, but every layer keeps B, so a contiguous backend keeps a single sequence length.
-- **Top-p hit set.** Implemented as a nucleus: the smallest set of entries holding at least 90% of the round's action attention.
-- **Budget excludes the protected prefix.** The system prompt and task are never evicted and don't count toward B.
+- **Per-layer keep sets, equal size (HF backend only).** Each layer picks its own top-B entries, but every layer keeps B, so a contiguous backend keeps a single sequence length. The paged path (`PagedKVCache.evict`) keeps one set for all layers, because a sequence has one block table: scores are averaged over layers.
+- **Top-p hit set.** Implemented as a nucleus: per layer, the smallest set of non-protected entries holding at least 90% of the action attention, averaged over the round's action tokens.
+- **Budget excludes the protected prefix.** The system prompt and task are never evicted and don't count toward B. ORA lengths and the `--budget-ratio` base (FullKV trace length) exclude them too.
+- **When the adaptive budget moves.** Alg. 2 adjusts the budget only when a compression is triggered (the evictable cache exceeds the current budget), not at every round end.
 - **Confidence trend window.** The slope is fit over the whole trace so far (min-pool w=64, s=8, bottom 10%).
-- **Baselines** compress mid-round once the cache exceeds B + L̄ (mean FullKV ORA length), as in Sec. 8.2. ActKV compresses only at ORA boundaries.
+- **When baselines compress.** SnapKV and StreamingLLM compress at every ORA boundary, and also mid-round once the cache exceeds B + slack. The slack is `--slack`, or L̄ (mean FullKV ORA length) when `--full-results` is given; with neither, baselines compress only at ORA boundaries. ActKV compresses only at ORA boundaries.
 
 Defaults otherwise follow Sec. 8.1: λ=0.5, p=0.9, k=20, initial budget 512, ×1.75 scale-up, 30K cap.
 
 ## Known limitations
 
-- Not integrated into vLLM. `actkv/paged.py` reproduces vLLM's KV layout and block tables so the kernels can be dropped in, but the scheduler and block-manager hooks are future work.
-- Sliding-window layers (GPT-OSS) aren't supported by the HF backend.
+- Not integrated into vLLM. `actkv/paged.py` models a vLLM-style per-layer KV layout and block tables (all layers in one tensor, no prefix sharing), but no model runs on it; scheduler and block-manager hooks are future work.
+- Sliding-window cache layers aren't supported by the HF backend: GPT-OSS, and Mistral checkpoints whose config sets `sliding_window`. The error is raised at the first compression, not when the session starts.
+- No CI. Tests run locally; `scripts/test_interpreter.sh` covers the Triton kernels in Docker.
 - Results in the paper used 20B to 235B models on 8x RTX PRO 6000. This repo targets single-GPU 4B to 8B runs, and checking whether the method holds at that scale is part of the point.
 
 ## Citation
