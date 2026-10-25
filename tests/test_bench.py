@@ -30,3 +30,11 @@ def test_json_output_says_which_kernel_path_ran(tmp_path):
     assert data["device"] == DEVICE and len(data["rows"]) == 1
     if DEVICE != "cuda":
         assert data["kernel_path"] != "triton"     # never compiled Triton on a CPU
+
+
+def test_zero_iterations_is_rejected():
+    import pytest
+    bench = load_script("benchmarks/bench_kernels.py")
+    with pytest.raises(SystemExit) as e:
+        bench.main(ARGS[:-2] + ["--iters", "0"])
+    assert e.value.code == 2

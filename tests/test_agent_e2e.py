@@ -156,3 +156,21 @@ def test_round_lengths_exclude_the_protected_prompt(monkeypatch):
     res = run_episode(s, env, QwenFormat(tok), 0)
     assert res["protected"] > 0
     assert res["protected"] + sum(res["ora_lens"]) == res["trace_len"]
+
+
+def test_episode_time_includes_the_prompt_prefill(monkeypatch):
+    """--hours budgets with episode time, so the (long) prompt prefill must be counted."""
+    import types
+    clock = [0.0]
+    monkeypatch.setattr("actkv.agent.react.time", types.SimpleNamespace(time=lambda: clock[0]))
+    tok = CharTok()
+    s = ActKVSession(tiny(), tok, make_policy("full"))
+    real_prefill = s.prefill
+
+    def slow_prefill(text, protected=False):
+        clock[0] += 5.0 if protected else 0.0
+        return real_prefill(text, protected=protected)
+
+    monkeypatch.setattr(s, "prefill", slow_prefill)
+    script(monkeypatch, tok, [call("finish")])
+    assert run_episode(s, StepEnv(), QwenFormat(tok), 0)["seconds"] == 5.0

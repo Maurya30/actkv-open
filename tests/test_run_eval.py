@@ -72,6 +72,7 @@ def test_resume_keys_on_the_full_config(tmp_path, monkeypatch):
     rows = [json.loads(line) for line in out.read_text().splitlines()]
     assert [r["config"]["slack"] for r in rows] == [32, 64]
     assert rows[0]["config_id"] != rows[1]["config_id"]
+    assert (rows[0]["device"], rows[0]["gpu"]) == ("cpu", None)   # what update_readme's CUDA gate reads
 
 
 def test_no_thinking_uses_qwen_non_thinking_sampling(tmp_path, monkeypatch):
@@ -233,3 +234,14 @@ def test_config_id_does_not_depend_on_how_the_fullkv_path_is_spelled():
     ids = {run_eval.config_id(run_eval.run_config(argparse.Namespace(**base, full_results=p)))
            for p in ("results/vault/full.jsonl", "./results/vault/full.jsonl", "results//vault/full.jsonl")}
     assert len(ids) == 1
+
+
+def test_task_range_is_checked_before_the_model_loads(tmp_path, monkeypatch):
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: pytest.fail("model was loaded"))
+    monkeypatch.setattr(run_eval, "make_env", lambda name, **kw: type("TwoGames", (), {"__len__": lambda self: 2})())
+    monkeypatch.setattr(sys, "argv", ["run_eval.py", "--env", "alfworld", "--method", "full", "--n-tasks", "5",
+                                      "--device", "cpu", "--out", str(tmp_path / "o.jsonl")])
+    with pytest.raises(SystemExit) as e:
+        run_eval.main()
+    assert e.value.code == 2
