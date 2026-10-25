@@ -30,7 +30,7 @@ class FakeTW:
         return f"did {cmd}", 0, won or cmd == "lose", {"admissible_commands": ["look"], "won": won}
 
 
-def fake_alfworld(monkeypatch, game_files):
+def fake_alfworld(monkeypatch, game_files, wrapper=None):
     """Install fake alfworld modules laid out like alfworld>=0.4 (the package exports no classes)."""
     calls = []
 
@@ -41,10 +41,59 @@ def fake_alfworld(monkeypatch, game_files):
 
     tw_mod = types.ModuleType("alfworld.agents.environment.alfred_tw_env")
     tw_mod.AlfredTWEnv = AlfredTWEnv
+    tw_mod.AlfredDemangler = tw_mod.AlfredInfos = wrapper
     for name in ("alfworld", "alfworld.agents", "alfworld.agents.environment"):
         monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
     monkeypatch.setitem(sys.modules, tw_mod.__name__, tw_mod)
     return calls
+
+
+def fake_textworld(monkeypatch):
+    """Fake textworld: a wrapper stack that loads a game file and names it on reset."""
+    class Game:
+        def __init__(self, infos):
+            self.file = None
+
+        def load(self, game_file):
+            self.file = game_file
+
+        def reset(self):
+            return f"game {self.file}", {"admissible_commands": ["look"], "won": False}
+
+    class Wrapper:
+        def __init__(self, env=None, **kw):
+            self.env = env
+
+        def __call__(self, env):
+            self.env = env
+            return self
+
+        def load(self, game_file):
+            self.env.load(game_file)
+
+        def reset(self):
+            return self.env.reset()
+
+    wrappers = types.ModuleType("textworld.envs.wrappers")
+    wrappers.GenericEnvironment, wrappers.Limit, wrappers.Filter = Game, Wrapper, Wrapper
+    textworld = types.ModuleType("textworld")
+    textworld.EnvInfos = dict
+    for mod in (textworld, types.ModuleType("textworld.envs"), wrappers):
+        monkeypatch.setitem(sys.modules, mod.__name__, mod)
+    return Wrapper
+
+
+def test_public_constructor_on_the_alfworld_0_4_layout_loads_game_i(tmp_path, monkeypatch):
+    """ALFWorldEnv(config_path, split) as the scripts call it: the old adapter crashed on alfworld>=0.4,
+    whose package re-exports no classes, and its reset(i) took the next game of a shuffled list."""
+    import yaml
+    fake_alfworld(monkeypatch, FILES, wrapper=fake_textworld(monkeypatch))
+    data = tmp_path / "valid_unseen"
+    data.mkdir()
+    config = tmp_path / "base_config.yaml"
+    config.write_text(yaml.safe_dump({"env": {"type": "AlfredTWEnv"}, "dataset": {"eval_ood_data_path": str(data)}}))
+    env = ALFWorldEnv(str(config), "eval_out_of_distribution")
+    assert [env.reset(i).splitlines()[0] for i in (1, 0, 1)] == [f"game {sorted(FILES)[i]}" for i in (1, 0, 1)]
 
 
 def test_reset_i_always_loads_game_i():
