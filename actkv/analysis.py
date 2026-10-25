@@ -36,6 +36,8 @@ class AAVRecorder(ActionLRFU):
             hit[layer, protected:] = top_p_mask(act[layer, protected:], self.cfg.top_p)
         self.rounds.append((hit.cpu(), act.cpu()))
         self.protected_len = protected
+        self.act.zero_()          # recorded once; a later round without an action records nothing
+        self.n_act = 0
         return None
 
 

@@ -29,7 +29,7 @@ def run_episode(session: ActKVSession, env: Env, fmt, task_idx: int,
             print(text[-400:])
             print(">>", obs[:200])
         if done:
-            session.stats.ora_lens.append(session.round_tokens)
+            session.end_round()   # policies (e.g. the Fig. 6 recorder) see the final round too
             break
         session.end_round()
         session.prefill(fmt.observation(obs, assistant_closed=session.ended_with_eos))

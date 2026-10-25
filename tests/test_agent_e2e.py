@@ -4,7 +4,8 @@ import pytest
 import torch
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
-from actkv.agent import QwenFormat, VaultEnv, run_episode
+from actkv.agent import Env, QwenFormat, VaultEnv, run_episode
+from actkv.analysis import AAVRecorder
 from actkv.budget import BudgetConfig, ConfidenceBudget, FixedBudget
 from actkv.eviction import make_policy
 from actkv.hf import ActKVSession, SamplingParams
@@ -85,3 +86,50 @@ def test_scripted_agent_solves_vault():
         code = obs.split("'")[1]
         _, done, ok = env.step("submit", {"code": code})
         assert done and ok
+
+
+class StepEnv(Env):
+    """`finish` ends the episode successfully; any other tool is a no-op."""
+    max_rounds = 3
+
+    def reset(self, i):
+        return "Call finish."
+
+    def step(self, name, args):
+        return "ok", name == "finish", name == "finish"
+
+
+def call(name):
+    return f'<tool_call>{{"name": "{name}", "arguments": {{}}}}</tool_call>'
+
+
+def script(monkeypatch, tok, rounds):
+    """Make the session 'sample' exactly these tokens; a round given as (text, True) ends with EOS."""
+    ids = []
+    for r in rounds:
+        text, eos = r if isinstance(r, tuple) else (r, False)
+        ids += tok(text).input_ids[0].tolist() + ([tok.eos_token_id] if eos else [])
+    it = iter(ids)
+    monkeypatch.setattr("actkv.hf.session.sample", lambda logits, sp, gen=None: next(it))
+
+
+def aav_episode(monkeypatch, rounds, max_rounds):
+    tok = CharTok()
+    pol = AAVRecorder()
+    s = ActKVSession(tiny(), tok, pol, budget=FixedBudget(10**9))
+    script(monkeypatch, tok, rounds)
+    env = StepEnv()
+    env.max_rounds = max_rounds
+    return pol, run_episode(s, env, QwenFormat(tok), 0)
+
+
+def test_aav_records_the_final_action_round(monkeypatch):
+    pol, res = aav_episode(monkeypatch, [call("finish")], max_rounds=3)
+    assert res["success"] and res["rounds"] == 1
+    assert len(pol.rounds) == 1
+
+
+def test_aav_skips_a_round_without_action(monkeypatch):
+    pol, res = aav_episode(monkeypatch, [call("look"), ("no tool call", True)], max_rounds=2)
+    assert res["rounds"] == 2 and res["invalid"] == 1
+    assert len(pol.rounds) == 1
