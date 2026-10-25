@@ -51,6 +51,30 @@ def full_lengths(path):
     return {k: int(statistics.median(v)) for k, v in lens.items()}
 
 
+def check_args(ap, args):
+    """Reject bad flag combinations before the (slow) model load."""
+    modes = [flag for flag, on in (("--adaptive", args.adaptive), ("--budget", args.budget is not None),
+                                   ("--budget-ratio", args.budget_ratio is not None)) if on]
+    if args.method == "full":
+        if modes or args.bidirectional:
+            ap.error(f"--method full never evicts; drop {', '.join(modes or ['--bidirectional'])}")
+    elif len(modes) != 1:
+        ap.error(f"choose exactly one of --adaptive, --budget, --budget-ratio (got {', '.join(modes) or 'none'})")
+    if args.bidirectional and not args.adaptive:
+        ap.error("--bidirectional only applies to --adaptive")
+    if args.budget is not None and args.budget <= 0:
+        ap.error("--budget must be positive")
+    if args.budget_ratio is not None:
+        if not 0 < args.budget_ratio <= 1:
+            ap.error("--budget-ratio must be in (0, 1]")
+        if not args.full_results:
+            ap.error("--budget-ratio needs --full-results (the FullKV jsonl)")
+    if args.full_results and not os.path.isfile(args.full_results):
+        ap.error(f"--full-results {args.full_results} does not exist")
+    if args.n_tasks <= 0 or args.runs <= 0:
+        ap.error("--n-tasks and --runs must be positive")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="Qwen/Qwen3-8B")
@@ -78,13 +102,14 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+    check_args(ap, args)
 
     model, tok = load_model(args.model, args.dtype, args.device)
     fmt = QwenFormat(tok, enable_thinking=not args.no_thinking)
     env = (make_env("alfworld", config_path=args.alfworld_config, n_tasks=args.n_tasks)
            if args.env == "alfworld" else make_env("vault", n_tasks=args.start + args.n_tasks))
 
-    per_task = full_lengths(args.full_results) if args.budget_ratio else {}
+    per_task = full_lengths(args.full_results) if args.budget_ratio is not None else {}
     slack = args.slack
     if slack is None and args.full_results:
         ora = []
@@ -94,42 +119,40 @@ def main():
         slack = int(statistics.mean(ora)) if ora else None
 
     ecfg = EvictionConfig(decay=args.decay, top_p=args.top_p_hit, head_reduce=args.head_reduce)
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     done = set()
     if os.path.exists(args.out):  # resume
         with open(args.out) as f:
             done = {(json.loads(line)["task"], json.loads(line)["run"]) for line in f}
 
-    with open(args.out, "a") as out:
-        for task in range(args.start, args.start + args.n_tasks):
-            for run in range(args.runs):
-                if (task, run) in done:
+    for task in range(args.start, args.start + args.n_tasks):
+        for run in range(args.runs):
+            if (task, run) in done:
+                continue
+            if args.method == "full":
+                budget = None
+            elif args.adaptive:
+                budget = ConfidenceBudget(BudgetConfig(bidirectional=args.bidirectional))
+            elif args.budget_ratio is not None:
+                if task not in per_task:
+                    print(f"skip task {task}: no FullKV length")
                     continue
-                if args.method == "full":
-                    budget = None
-                elif args.adaptive:
-                    budget = ConfidenceBudget(BudgetConfig(bidirectional=args.bidirectional))
-                elif args.budget_ratio:
-                    if task not in per_task:
-                        print(f"skip task {task}: no FullKV length")
-                        continue
-                    budget = FixedBudget(max(1, int(args.budget_ratio * per_task[task])))
-                elif args.budget:
-                    budget = FixedBudget(args.budget)
-                else:
-                    ap.error("choose --adaptive, --budget or --budget-ratio (or --method full)")
-                policy = make_policy(args.method, ecfg) if args.method == "actkv" else make_policy(args.method)
-                session = ActKVSession(model, tok, policy, budget=budget,
-                                       detector=ActionRegionDetector.for_template(fmt.template),
-                                       sampling=SamplingParams(greedy=args.greedy),
-                                       mid_round_slack=slack, seed=1000 * task + run)
-                res = run_episode(session, env, fmt, task, args.max_new_tokens, args.verbose)
-                res.update(run=run, method=args.method, adaptive=args.adaptive,
-                           budget_ratio=args.budget_ratio, fixed_budget=args.budget, model=args.model)
+                budget = FixedBudget(max(1, int(args.budget_ratio * per_task[task])))
+            else:
+                budget = FixedBudget(args.budget)
+            policy = make_policy(args.method, ecfg) if args.method == "actkv" else make_policy(args.method)
+            session = ActKVSession(model, tok, policy, budget=budget,
+                                   detector=ActionRegionDetector.for_template(fmt.template),
+                                   sampling=SamplingParams(greedy=args.greedy),
+                                   mid_round_slack=slack, seed=1000 * task + run)
+            res = run_episode(session, env, fmt, task, args.max_new_tokens, args.verbose)
+            res.update(run=run, method=args.method, adaptive=args.adaptive,
+                       budget_ratio=args.budget_ratio, fixed_budget=args.budget, model=args.model)
+            # the file is created by the first finished episode, so failed runs leave nothing behind
+            os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+            with open(args.out, "a") as out:
                 out.write(json.dumps(res) + "\n")
-                out.flush()
-                print(f"task {task} run {run}: success={res['success']} rounds={res['rounds']} "
-                      f"peak={res['peak_entries']} trace={res['trace_len']} {res['seconds']:.0f}s")
+            print(f"task {task} run {run}: success={res['success']} rounds={res['rounds']} "
+                  f"peak={res['peak_entries']} trace={res['trace_len']} {res['seconds']:.0f}s")
 
 
 if __name__ == "__main__":
