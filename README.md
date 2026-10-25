@@ -69,6 +69,12 @@ Whether `cache_position` matters depends on the transformers version. From 4.56 
 
 Scores come from `output_attentions` on single-token decode steps, which requires `attn_implementation="eager"`. That's simple and model-agnostic but slow. The paged kernels are meant to be the fast path, but no model backend uses them yet (see Known limitations).
 
+<!-- results:begin -->
+## Results
+
+No GPU results yet. `scripts/run_a100.sh` produces them (see [RUNPOD.md](RUNPOD.md)), and `scripts/update_readme.py` writes this section from the result files only.
+<!-- results:end -->
+
 ## Choices where the paper is ambiguous
 
 - **Head aggregation.** Compaction moves whole slots (all heads), so each token needs one score per layer. Scores are max over the GQA group (as in Alg. 3) and then **mean over KV heads** (`head_reduce="max"` is available).
