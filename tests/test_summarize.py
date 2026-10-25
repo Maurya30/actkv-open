@@ -68,3 +68,29 @@ def test_plot_works_when_fullkv_never_succeeds(tmp_path, monkeypatch):
     cfg = {"method": "streaming", "budget": 64}
     pts = _plot_run(tmp_path, monkeypatch, [row(0, False, FULL)], [row(0, True, cfg)])
     assert len(pts) == 2
+
+
+def test_bootstrap_ci_brackets_the_mean_and_is_reproducible():
+    summarize = load_script("scripts/summarize.py")
+    values = [1.0] * 30 + [0.0] * 10
+    lo, hi = summarize.bootstrap_ci(values)
+    assert lo < 0.75 < hi and (lo, hi) == summarize.bootstrap_ci(values)
+    assert summarize.bootstrap_ci([1.0]) == (None, None)     # one task: no interval
+
+
+def test_paired_delta_vs_fullkv_with_sample_sizes(tmp_path, monkeypatch):
+    import json
+    summarize = load_script("scripts/summarize.py")
+    cfg = {"method": "streaming", "budget": 64}
+    full = write(tmp_path / "full.jsonl", [row(t, True, FULL) for t in range(10)])
+    other = write(tmp_path / "s.jsonl", [row(t, t != 0, cfg) for t in range(10)])
+    out = tmp_path / "summary.json"
+    monkeypatch.setattr(sys, "argv", ["summarize.py", "--full", full, other, "--json", str(out)])
+    summarize.main()
+    res = {c["name"]: c for c in json.loads(out.read_text())["configs"]}
+    s = res["streaming (B=64)"]
+    assert (s["n_tasks"], s["n_episodes"], s["n_common_tasks"]) == (10, 10, 10)
+    assert abs(s["acc"] - 0.9) < 1e-9 and abs(s["delta_vs_full"] + 0.1) < 1e-9
+    assert s["delta_ci"][0] < -0.05 and s["delta_ci"][1] <= 0.0
+    f = res["FullKV"]
+    assert f["delta_vs_full"] == 0.0 and f["delta_ci"] == [0.0, 0.0] and f["acc_ci"] == [1.0, 1.0]
