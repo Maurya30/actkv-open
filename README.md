@@ -61,7 +61,8 @@ done; done
 # 4. Table (sample sizes, 95% bootstrap CIs, paired delta vs FullKV) + accuracy-vs-memory plot
 python scripts/summarize.py --full results/full.jsonl results/*.jsonl --plot results/pareto.png
 
-# 3+4 in one process: every config task by task, stopping before a time budget
+# 1-3 in one process (model loaded once): every config task by task, stopping before a time budget;
+# then step 4 on results/vault
 python scripts/run_eval.py --sweep configs/vault_sweep.json --out-dir results/vault --hours 3
 
 # 5. Do action-critical entries stay stable on small models? (Fig. 6)
@@ -95,7 +96,7 @@ No GPU results yet. `scripts/run_a100.sh` produces them (see [RUNPOD.md](RUNPOD.
 - **Budget excludes the protected prefix.** The system prompt and task are never evicted and don't count toward B. ORA lengths and the `--budget-ratio` base (FullKV trace length) exclude them too.
 - **When the adaptive budget moves.** Alg. 2 adjusts the budget only when a compression is triggered (the evictable cache exceeds the current budget), not at every round end.
 - **Confidence trend window.** The slope is fit over the whole trace so far (min-pool w=64, s=8, bottom 10%).
-- **When baselines compress.** SnapKV and StreamingLLM compress at every ORA boundary, and also mid-round once the cache exceeds B + slack. The slack is `--slack`, or L̄ (mean FullKV ORA length) when `--full-results` is given; with neither, baselines compress only at ORA boundaries. ActKV compresses only at ORA boundaries.
+- **When baselines compress.** SnapKV and StreamingLLM compress at every ORA boundary, and also mid-round once the cache exceeds B + slack. The slack is `--slack`, or L̄ when `--full-results` is given, taken per task: the mean FullKV ORA length of the same task, like the per-trace budget. With neither, baselines compress only at ORA boundaries. ActKV compresses only at ORA boundaries.
 
 Defaults otherwise follow Sec. 8.1: λ=0.5, p=0.9, k=20, initial budget 512, ×1.75 scale-up, 30K cap.
 
