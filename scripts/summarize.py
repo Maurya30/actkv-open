@@ -12,16 +12,30 @@ from collections import defaultdict
 
 def load(path):
     with open(path) as f:
-        return [json.loads(line) for line in f]
+        return [json.loads(line) for line in f if line.strip()]
 
 
-def label(rows, path):
-    r = rows[0]
-    if r["method"] == "full":
+def base_label(cfg):
+    if cfg["method"] == "full":
         return "FullKV"
-    tag = "adaptive" if r.get("adaptive") else (f"r={r['budget_ratio']}" if r.get("budget_ratio")
-                                                 else f"B={r.get('fixed_budget')}")
-    return f"{r['method']} ({tag})"
+    if cfg.get("adaptive"):
+        tag = "adaptive, bidirectional" if cfg.get("bidirectional") else "adaptive"
+    elif cfg.get("budget_ratio") is not None:
+        tag = f"r={cfg['budget_ratio']}"
+    else:
+        tag = f"B={cfg.get('budget')}"
+    return f"{cfg['method']} ({tag})"
+
+
+def labels(configs):
+    """{config_id: config} -> {config_id: label}. Configs sharing a base label get the fields that differ."""
+    base = {cid: base_label(c) for cid, c in configs.items()}
+    out = {}
+    for cid, cfg in configs.items():
+        group = [c for k, c in configs.items() if base[k] == base[cid]]
+        diff = sorted(k for k in set().union(*group) if len({json.dumps(c.get(k)) for c in group}) > 1)
+        out[cid] = base[cid] + (" [" + ", ".join(f"{k}={cfg.get(k)}" for k in diff) + "]" if diff else "")
+    return out
 
 
 def summarize(full_rows, rows):
@@ -52,14 +66,19 @@ def main():
     ap.add_argument("--plot")
     args = ap.parse_args()
     full_rows = load(args.full)
+    groups, configs = {}, {}          # rows grouped by run config, in order of first appearance
+    for path in dict.fromkeys([args.full, *args.files]):
+        for r in load(path):
+            cfg = r.get("config") or {"method": r["method"]}
+            cid = r.get("config_id") or json.dumps(cfg, sort_keys=True)
+            configs.setdefault(cid, cfg)
+            groups.setdefault(cid, []).append(r)
+    names = labels(configs)
     table = []
     print(f"{'config':<28} {'n':>5} {'acc':>7} {'acc/full':>9} {'peak/full':>10} {'trace/full':>11}")
-    for path in [args.full] + [p for p in args.files if p != args.full]:
-        rows = load(path)
-        if not rows:
-            continue
+    for cid, rows in groups.items():
         s = summarize(full_rows, rows)
-        name = label(rows, path)
+        name = names[cid]
         table.append((name, s))
         print(f"{name:<28} {s['n']:>5} {s['acc']:>7.3f} {s['acc_vs_full']:>8.1%} "
               f"{s['peak_vs_full']:>9.1%} {s['trace_vs_full']:>10.1%}")

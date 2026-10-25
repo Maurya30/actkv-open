@@ -17,6 +17,7 @@ Examples
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import statistics
@@ -42,13 +43,36 @@ def load_model(name, dtype, device):
     return model, tok
 
 
+def read_rows(path):
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 def full_lengths(path):
     lens = {}
-    with open(path) as f:
-        for line in f:
-            r = json.loads(line)
+    for r in read_rows(path):
+        if r.get("method", "full") == "full":
             lens.setdefault(r["task"], []).append(r["trace_len"])
     return {k: int(statistics.median(v)) for k, v in lens.items()}
+
+
+def run_config(args) -> dict:
+    """Every setting that can change an episode's outcome; resume and summaries key on it."""
+    cfg = {"model": args.model, "dtype": args.dtype, "env": args.env, "method": args.method,
+           "adaptive": args.adaptive, "bidirectional": args.bidirectional, "budget": args.budget,
+           "budget_ratio": args.budget_ratio, "full_results": args.full_results,
+           "slack": args.slack if args.slack is not None else ("fullkv-mean" if args.full_results else None),
+           "decay": args.decay, "top_p_hit": args.top_p_hit, "head_reduce": args.head_reduce,
+           "max_new_tokens": args.max_new_tokens, "greedy": args.greedy, "no_thinking": args.no_thinking}
+    if args.method != "actkv":            # ActKV's knobs don't affect the other methods
+        cfg.update(decay=None, top_p_hit=None, head_reduce=None)
+    if args.method in ("full", "actkv"):  # only the baselines compress mid-round
+        cfg.update(slack=None)
+    return cfg
+
+
+def config_id(cfg: dict) -> str:
+    return hashlib.sha1(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:12]
 
 
 def check_args(ap, args):
@@ -119,14 +143,15 @@ def main():
         slack = int(statistics.mean(ora)) if ora else None
 
     ecfg = EvictionConfig(decay=args.decay, top_p=args.top_p_hit, head_reduce=args.head_reduce)
+    cfg = run_config(args)
+    cid = config_id(cfg)
     done = set()
-    if os.path.exists(args.out):  # resume
-        with open(args.out) as f:
-            done = {(json.loads(line)["task"], json.loads(line)["run"]) for line in f}
+    if os.path.exists(args.out):  # resume: only rows of this exact config count as done
+        done = {(r.get("config_id"), r["task"], r["run"]) for r in read_rows(args.out)}
 
     for task in range(args.start, args.start + args.n_tasks):
         for run in range(args.runs):
-            if (task, run) in done:
+            if (cid, task, run) in done:
                 continue
             if args.method == "full":
                 budget = None
@@ -145,8 +170,7 @@ def main():
                                    sampling=SamplingParams(greedy=args.greedy),
                                    mid_round_slack=slack, seed=1000 * task + run)
             res = run_episode(session, env, fmt, task, args.max_new_tokens, args.verbose)
-            res.update(run=run, method=args.method, adaptive=args.adaptive,
-                       budget_ratio=args.budget_ratio, fixed_budget=args.budget, model=args.model)
+            res.update(run=run, method=args.method, model=args.model, config=cfg, config_id=cid)
             # the file is created by the first finished episode, so failed runs leave nothing behind
             os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
             with open(args.out, "a") as out:

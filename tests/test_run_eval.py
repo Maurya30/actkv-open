@@ -50,3 +50,25 @@ def test_no_output_file_when_no_episode_runs(tmp_path, monkeypatch):
                                       "--out", str(out)])
     run_eval.main()
     assert not out.exists()
+
+
+def _stub_episode(session, env, fmt, task, *a, **k):
+    return {"task": task, "success": False, "rounds": 1, "invalid": 0, "peak_entries": 1,
+            "trace_len": 1, "protected": 0, "compressions": 0, "budgets": [], "ora_lens": [1],
+            "seconds": 0.0, "transcript": []}
+
+
+def test_resume_keys_on_the_full_config(tmp_path, monkeypatch):
+    """A run that differs only in --slack must not be skipped as 'already done'."""
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: (tiny(), CharTok()))
+    monkeypatch.setattr(run_eval, "run_episode", _stub_episode)
+    out = tmp_path / "out.jsonl"
+    for slack in ("32", "64", "64"):          # the repeated config is the only one to skip
+        monkeypatch.setattr(sys, "argv", ["run_eval.py", "--method", "snapkv", "--budget", "64",
+                                          "--slack", slack, "--n-tasks", "1", "--runs", "1",
+                                          "--device", "cpu", "--out", str(out)])
+        run_eval.main()
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    assert [r["config"]["slack"] for r in rows] == [32, 64]
+    assert rows[0]["config_id"] != rows[1]["config_id"]
