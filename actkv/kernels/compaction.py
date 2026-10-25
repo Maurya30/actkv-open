@@ -86,10 +86,11 @@ if HAS_TRITON:
         dst = tl.load(DST + p).to(tl.int64)
         offs = c * BLOCK + tl.arange(0, BLOCK)
         m = offs < ROW
-        for plane in range(n_planes):
-            base = KV + plane * stride_plane
+        base = KV
+        for _ in range(n_planes):
             val = tl.load(base + src * stride_slot + offs, mask=m)
             tl.store(base + dst * stride_slot + offs, val, mask=m)
+            base += stride_plane   # step the pointer: plane * stride_plane overflows int32 on big caches
 
 
 def apply_copies(kv_flat: torch.Tensor, src: torch.Tensor, dst: torch.Tensor) -> None:

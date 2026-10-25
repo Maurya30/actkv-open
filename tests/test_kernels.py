@@ -93,6 +93,22 @@ def test_copy_kernel_matches_reference():
     torch.testing.assert_close(a, b)
 
 
+@pytest.mark.gpu
+@pytest.mark.skipif(not torch.cuda.is_available() or torch.cuda.mem_get_info()[0] < 8 * 2**30,
+                    reason="needs a CUDA GPU with 8 GB free")
+def test_copy_kernel_handles_offsets_past_2_to_the_31():
+    """Multi-layer caches put later planes past 2^31 elements; int32 offsets would wrap there."""
+    row = 1024
+    slots = 2**31 // row // 2 + 64                      # each plane holds just over 2^30 elements
+    flat = torch.zeros(3, slots, row, dtype=torch.float16, device="cuda")
+    src = torch.tensor([5, slots - 1], device="cuda")
+    dst = torch.tensor([7, 9], device="cuda")
+    flat[:, src] = torch.arange(1, 4, dtype=torch.float16, device="cuda").view(3, 1, 1)
+    apply_copies(flat, src, dst)
+    torch.cuda.synchronize()
+    assert torch.equal(flat[:, dst], flat[:, src])
+
+
 @pytest.mark.parametrize("n,budget", [(150, 60), (40, 39), (33, 16)])
 def test_compaction_preserves_kept_entries_and_frees_blocks(n, budget):
     cache = _filled_cache([n], layers=2)
