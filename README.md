@@ -26,7 +26,7 @@ R-KV is not included yet.
 ## Install
 
 ```bash
-pip install -e ".[triton,dev]"            # + ".[alfworld]" for ALFWorld
+pip install -e ".[triton,dev]"            # triton installs on Linux only; + ".[eval]" for plots, ".[alfworld]" for ALFWorld
 pytest                                    # 36 tests; on CPU the Triton kernels run in interpreter mode
 ```
 
