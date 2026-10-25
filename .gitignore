@@ -2,6 +2,5 @@ __pycache__/
 *.pyc
 *.egg-info/
 .pytest_cache/
-results/
-*.jsonl
 .venv/
+results/.done/

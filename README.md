@@ -34,6 +34,15 @@ scripts/test_interpreter.sh               # runs those kernel tests under the Tr
 
 ## Run
 
+The full GPU evaluation (tests with real Triton, the kernel benchmark, the eval sweeps, summary tables with confidence intervals, and this README's results section) is one resumable command; see [RUNPOD.md](RUNPOD.md):
+
+```bash
+bash scripts/run_a100.sh              # on a CUDA GPU
+bash scripts/run_a100.sh --dry-run    # the same pipeline on CPU with a tiny random model
+```
+
+The pieces, individually:
+
 ```bash
 # 1. FullKV reference (also gives per-task trace lengths for ratio budgets)
 python scripts/run_eval.py --model Qwen/Qwen3-8B --env vault --method full --n-tasks 50 --runs 3 \
@@ -49,14 +58,17 @@ for m in actkv snapkv streaming; do for r in 0.05 0.1 0.2 0.3; do
       --full-results results/full.jsonl --out results/${m}_${r}.jsonl
 done; done
 
-# 4. Table + accuracy-vs-memory plot
+# 4. Table (sample sizes, 95% bootstrap CIs, paired delta vs FullKV) + accuracy-vs-memory plot
 python scripts/summarize.py --full results/full.jsonl results/*.jsonl --plot results/pareto.png
+
+# 3+4 in one process: every config task by task, stopping before a time budget
+python scripts/run_eval.py --sweep configs/vault_sweep.json --out-dir results/vault --hours 3
 
 # 5. Do action-critical entries stay stable on small models? (Fig. 6)
 python scripts/access_patterns.py --model Qwen/Qwen3-8B --only-success --out results/aav_8b.json
 
-# 6. Kernel speed (Table 1 setup), on a GPU
-python benchmarks/bench_kernels.py --device cuda
+# 6. Kernel speed and memory (Table 1 setup), on a GPU
+python benchmarks/bench_kernels.py --device cuda --out results/bench_kernels.json
 ```
 
 **Environments.** `vault` is an offline memory task built for this repo, with long noisy room listings. The vault code is on a note that can be read only once, the note says where a trail starts, and the vault at the end of the trail (at least `trail` + 1 rounds later) takes a single submit. The code has 170,000 possible values. `tests/test_vault.py` shows a scripted agent with memory solves every task and the same agent without memory fails every task. `alfworld` wraps the ALFWorld text env (`pip install alfworld && alfworld-download`). Task *i* is game *i* of the split in sorted order (`--alfworld-split`, default `eval_out_of_distribution`, 134 games). The data is read from `$ALFWORLD_DATA` (default `~/.cache/alfworld`) with a built-in copy of the config keys the text env needs; `--alfworld-config` takes ALFWorld's `base_config.yaml` instead. The adapter is tested with fake modules and was run on four real games, but no model has played ALFWorld through it yet.
