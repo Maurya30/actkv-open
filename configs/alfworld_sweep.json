@@ -1,0 +1,7 @@
+[
+  {"name": "full", "method": "full"},
+  {"name": "actkv_adaptive", "method": "actkv", "adaptive": true},
+  {"name": "actkv_r0.2", "method": "actkv", "budget_ratio": 0.2, "full_results": "full.jsonl"},
+  {"name": "snapkv_r0.2", "method": "snapkv", "budget_ratio": 0.2, "full_results": "full.jsonl"},
+  {"name": "streaming_r0.2", "method": "streaming", "budget_ratio": 0.2, "full_results": "full.jsonl"}
+]

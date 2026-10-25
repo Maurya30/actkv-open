@@ -1,0 +1,17 @@
+[
+  {"name": "full", "method": "full"},
+  {"name": "actkv_adaptive", "method": "actkv", "adaptive": true},
+  {"name": "actkv_adaptive_bidir", "method": "actkv", "adaptive": true, "bidirectional": true},
+  {"name": "actkv_r0.05", "method": "actkv", "budget_ratio": 0.05, "full_results": "full.jsonl"},
+  {"name": "actkv_r0.1", "method": "actkv", "budget_ratio": 0.1, "full_results": "full.jsonl"},
+  {"name": "actkv_r0.2", "method": "actkv", "budget_ratio": 0.2, "full_results": "full.jsonl"},
+  {"name": "actkv_r0.3", "method": "actkv", "budget_ratio": 0.3, "full_results": "full.jsonl"},
+  {"name": "snapkv_r0.05", "method": "snapkv", "budget_ratio": 0.05, "full_results": "full.jsonl"},
+  {"name": "snapkv_r0.1", "method": "snapkv", "budget_ratio": 0.1, "full_results": "full.jsonl"},
+  {"name": "snapkv_r0.2", "method": "snapkv", "budget_ratio": 0.2, "full_results": "full.jsonl"},
+  {"name": "snapkv_r0.3", "method": "snapkv", "budget_ratio": 0.3, "full_results": "full.jsonl"},
+  {"name": "streaming_r0.05", "method": "streaming", "budget_ratio": 0.05, "full_results": "full.jsonl"},
+  {"name": "streaming_r0.1", "method": "streaming", "budget_ratio": 0.1, "full_results": "full.jsonl"},
+  {"name": "streaming_r0.2", "method": "streaming", "budget_ratio": 0.2, "full_results": "full.jsonl"},
+  {"name": "streaming_r0.3", "method": "streaming", "budget_ratio": 0.3, "full_results": "full.jsonl"}
+]
