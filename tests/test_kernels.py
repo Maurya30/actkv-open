@@ -181,3 +181,20 @@ def test_keep_mask_reduces_heads_then_averages_layers():
     scores[:, :, 2] = 0.3                # every head of every layer likes token 2 a bit
     assert keep_mask_from_scores(scores, 4, budget=1).tolist() == [False, False, True, False]
     assert keep_mask_from_scores(scores, 4, budget=1, head_reduce="max").tolist() == [False, True, False, False]
+
+
+def test_evict_keeps_the_protected_tokens_across_repeated_evictions():
+    """Compaction moves the prompt's tokens; a second evict must still protect them, not positions 0..P-1."""
+    cache = _filled_cache([64], hkv=2, d=16)
+    prompt = cache.gather(0)[0][:8].clone()
+    scores = torch.zeros(2, 64, device=DEVICE)
+    scores[:, 8:56] = torch.rand(2, 48, generator=torch.Generator().manual_seed(4)).to(DEVICE) + 1
+    cache.evict(0, scores, budget=24, protected=8)
+    new = torch.randn(1, 16, 2, 16, generator=torch.Generator().manual_seed(5)).to(DEVICE)
+    cache.append(0, new, new)
+    scores = torch.zeros(2, cache.seq_used[0], device=DEVICE)
+    scores[:, -16:] = 1.0                                   # the new tokens score highest
+    cache.evict(0, scores, budget=16, protected=8)
+    k = cache.gather(0)[0]
+    assert cache.seq_used[0] == 8 + 16
+    assert all(any(torch.equal(p, row) for row in k) for p in prompt)

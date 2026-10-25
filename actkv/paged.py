@@ -20,13 +20,14 @@ class OutOfBlocks(RuntimeError):
     pass
 
 
-def keep_mask_from_scores(scores: torch.Tensor, seq_used: int, budget: int, protected: int = 0,
-                          head_reduce: str = "mean") -> torch.Tensor:
-    """Per-token scores -> keep mask [seq_used]: the protected prefix plus the top-`budget` tokens.
+def keep_mask_from_scores(scores: torch.Tensor, seq_used: int, budget: int,
+                          protected: int | torch.Tensor = 0, head_reduce: str = "mean") -> torch.Tensor:
+    """Per-token scores -> keep mask [seq_used]: the protected tokens plus the top-`budget` others.
 
     scores: [S], [Hkv, S] or [n_layers, Hkv, S] (what cal_attn accumulates per layer). KV heads are
     reduced with `head_reduce`, then layers are averaged: a sequence has one block table for all
-    layers, so a paged cache keeps the same tokens in every layer.
+    layers, so a paged cache keeps the same tokens in every layer. protected: a count of leading
+    tokens, or a bool mask [seq_used] of tokens that are always kept.
     """
     if head_reduce not in ("mean", "max"):
         raise ValueError(head_reduce)
@@ -34,11 +35,14 @@ def keep_mask_from_scores(scores: torch.Tensor, seq_used: int, budget: int, prot
     if s.dim() >= 2:
         s = s.amax(-2) if head_reduce == "max" else s.mean(-2)
         s = s.reshape(-1, seq_used).mean(0)
-    keep = torch.zeros(seq_used, dtype=torch.bool, device=scores.device)
-    keep[:protected] = True
-    k = min(budget, seq_used - protected)
+    if isinstance(protected, torch.Tensor):
+        keep = protected.to(device=scores.device, dtype=torch.bool).clone()
+    else:
+        keep = torch.arange(seq_used, device=scores.device) < protected
+    others = torch.nonzero(~keep).flatten()
+    k = min(budget, others.numel())
     if k > 0:
-        keep[protected + torch.topk(s[protected:], k).indices] = True
+        keep[others[torch.topk(s[others], k).indices]] = True
     return keep
 
 
@@ -52,6 +56,7 @@ class PagedKVCache:
         self.free: list[int] = list(range(num_blocks - 1, -1, -1))
         self.tables: dict[int, list[int]] = {}
         self.seq_used: dict[int, int] = {}
+        self.pinned: dict[int, torch.Tensor] = {}   # per request: which logical positions evict() protects
         self.device = device
 
     # ---------------------------------------------------------------- allocation
@@ -82,6 +87,7 @@ class PagedKVCache:
     def release(self, req: int) -> None:
         self.free.extend(reversed(self.tables.pop(req, [])))
         self.seq_used.pop(req, None)
+        self.pinned.pop(req, None)
 
     # ---------------------------------------------------------------- views
     def slot_map(self, req: int, n: int | None = None) -> torch.Tensor:
@@ -136,9 +142,16 @@ class PagedKVCache:
               head_reduce: str = "mean") -> torch.Tensor:
         """Scores -> KeepMask -> Compaction: keep the protected prefix plus the top-`budget` tokens.
 
+        `protected` counts the request's first tokens (e.g. the prompt) the first time it is evicted.
+        Compaction moves them, so the cache remembers where they went and keeps protecting them.
         Returns `perm` like compact(); a request already within budget is left untouched.
         """
         n = self.seq_used[req]
-        if n - protected <= budget:
+        pinned = self.pinned.get(req, torch.arange(n, device=self.device) < protected)
+        pinned = torch.cat([pinned, pinned.new_zeros(n - pinned.numel())])   # tokens appended since
+        self.pinned[req] = pinned
+        if n - int(pinned.sum()) <= budget:
             return torch.arange(n, device=self.device)
-        return self.compact(req, keep_mask_from_scores(scores, n, budget, protected, head_reduce))
+        perm = self.compact(req, keep_mask_from_scores(scores, n, budget, pinned, head_reduce))
+        self.pinned[req] = pinned[perm]
+        return perm
