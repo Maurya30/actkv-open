@@ -113,19 +113,28 @@ def run_case(r, n, budget, args, dev, dtype):
                                    rtol=1e-3, atol=1e-3)
 
     def timed(step):
-        times = []
+        """Median time over --iters fresh caches, and the most extra memory one step allocated."""
+        times, extra = [], []
         for _ in range(args.iters):
             cache = build(r, n, args, dev, dtype)      # compaction mutates the cache
             _sync(dev)
+            if dev == "cuda":
+                torch.cuda.reset_peak_memory_stats()
+                base = torch.cuda.memory_allocated()
             t = time.perf_counter()
             step(cache)
             _sync(dev)
             times.append((time.perf_counter() - t) * 1e3)
-        return sorted(times)[len(times) // 2]
+            if dev == "cuda":
+                extra.append(torch.cuda.max_memory_allocated() - base)
+        return sorted(times)[len(times) // 2], (max(extra) / 2**20 if extra else None)
 
-    return {"n": n, "budget": budget, "r": r,
-            "actkv_ms": timed(lambda c: actkv_step(c, reqs, q, lse, budget)),
-            "gather_ms": timed(lambda c: gather_step(c, reqs, q, lse, budget, slots)),
+    actkv_ms, actkv_mb = timed(lambda c: actkv_step(c, reqs, q, lse, budget))
+    gather_ms, gather_mb = timed(lambda c: gather_step(c, reqs, q, lse, budget, slots))
+    return {"n": n, "budget": budget, "r": r, "actkv_ms": actkv_ms, "gather_ms": gather_ms,
+            "actkv_extra_mb": actkv_mb, "gather_extra_mb": gather_mb,
+            "memory": ("peak bytes allocated during the step above the cache (torch.cuda.max_memory_allocated)"
+                       if dev == "cuda" else f"not measured: no peak-memory counter for device {dev}"),
             "masks_match": masks_match, "outputs_match": outputs_match}
 
 
@@ -146,15 +155,17 @@ def main(argv=None):
     reqs = [1, 2] if args.small else args.reqs
 
     print(f"device={dev} block={args.block_size} kv_heads={args.kv_heads} head_dim={args.head_dim}")
-    print(f"{'case':>14} {'r':>4} {'actkv ms':>10} {'gather ms':>10} {'speedup':>8} {'check':>9}")
+    print(f"{'case':>14} {'r':>4} {'actkv ms':>10} {'gather ms':>10} {'speedup':>8} "
+          f"{'actkv MB':>9} {'gather MB':>10} {'check':>9}")
     rows = []
     for n, budget in cases:
         for r in reqs:
             row = run_case(r, n, budget, args, dev, dtype)
             rows.append(row)
             check = "ok" if row["masks_match"] and row["outputs_match"] else "MISMATCH"
+            mb = [f"{v:.1f}" if v is not None else "n/a" for v in (row["actkv_extra_mb"], row["gather_extra_mb"])]
             print(f"{f'{n}->{budget}':>14} {r:>4} {row['actkv_ms']:>10.3f} {row['gather_ms']:>10.3f} "
-                  f"{row['gather_ms'] / row['actkv_ms']:>7.2f}x {check:>9}")
+                  f"{row['gather_ms'] / row['actkv_ms']:>7.2f}x {mb[0]:>9} {mb[1]:>10} {check:>9}")
     return rows
 
 
