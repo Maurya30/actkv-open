@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 from collections import defaultdict
 
@@ -59,6 +60,33 @@ def summarize(full_rows, rows):
     }
 
 
+def pct(x):
+    return "n/a" if math.isnan(x) else f"{x:.1%}"
+
+
+def plot(table, path):
+    """Accuracy vs peak KV memory. Accuracy is absolute (a ratio to FullKV is undefined when FullKV
+    never succeeds); marker area grows with trace length relative to FullKV."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(6, 4))
+    for name, s in table:
+        if math.isnan(s["peak_vs_full"]):
+            print(f"not plotted: {name} (no tasks in common with FullKV)")
+            continue
+        size = min(max(40 + 200 * (s["trace_vs_full"] - 0.5), 10), 400)
+        ax.scatter(100 * s["peak_vs_full"], 100 * s["acc"], s=size)
+        ax.annotate(name, (100 * s["peak_vs_full"], 100 * s["acc"]), fontsize=8,
+                    xytext=(4, 4), textcoords="offset points")
+    ax.set_xlabel("Peak KV memory (% of FullKV)")
+    ax.set_ylabel("Accuracy (%)")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    print(f"wrote {path}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", required=True)
@@ -80,23 +108,10 @@ def main():
         s = summarize(full_rows, rows)
         name = names[cid]
         table.append((name, s))
-        print(f"{name:<28} {s['n']:>5} {s['acc']:>7.3f} {s['acc_vs_full']:>8.1%} "
-              f"{s['peak_vs_full']:>9.1%} {s['trace_vs_full']:>10.1%}")
+        print(f"{name:<28} {s['n']:>5} {s['acc']:>7.3f} {pct(s['acc_vs_full']):>9} "
+              f"{pct(s['peak_vs_full']):>10} {pct(s['trace_vs_full']):>11}")
     if args.plot:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(6, 4))
-        for name, s in table:
-            ax.scatter(100 * s["peak_vs_full"], 100 * s["acc_vs_full"], s=40 + 200 * (s["trace_vs_full"] - 0.5))
-            ax.annotate(name, (100 * s["peak_vs_full"], 100 * s["acc_vs_full"]), fontsize=8,
-                        xytext=(4, 4), textcoords="offset points")
-        ax.set_xlabel("Peak KV memory (% of FullKV)")
-        ax.set_ylabel("Accuracy (% of FullKV)")
-        ax.grid(alpha=0.3)
-        fig.tight_layout()
-        fig.savefig(args.plot, dpi=150)
-        print(f"wrote {args.plot}")
+        plot(table, args.plot)
 
 
 if __name__ == "__main__":
