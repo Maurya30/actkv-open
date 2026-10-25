@@ -205,6 +205,9 @@ class ActionLRFU(Policy):
             ks = self.ks[layer, protected:]
             ks.mul_(self.cfg.decay)
             ks[hit] += a[hit]
+        # this round's action attention is now spent; a round without an action only decays
+        self.act.zero_()
+        self.n_act = 0
 
     def select(self, length, protected, budget):
         self.update_scores(length, protected)

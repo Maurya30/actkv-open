@@ -33,6 +33,17 @@ def test_lrfu_update_matches_algorithm_1():
     torch.testing.assert_close(pol.ks[0], torch.tensor([0.0, 0.0, 0.4, 0.05, 0.95, 0.0]))
 
 
+def test_lrfu_round_without_action_only_decays():
+    """A round with no action region (e.g. an invalid output) must not re-apply last round's hits."""
+    pol = ActionLRFU(EvictionConfig(decay=0.5, top_p=0.9))
+    pol.reset(1)
+    pol.begin_action()
+    pol.observe([torch.tensor([0.05, 0.05, 0.8, 0.1])], in_action=True)
+    pol.update_scores(4, protected=0)
+    pol.update_scores(6, protected=0)   # no begin_action / observe this round
+    torch.testing.assert_close(pol.ks[0], torch.tensor([0.0, 0.0, 0.4, 0.05, 0.0, 0.0]))
+
+
 def test_lrfu_keeps_intermittent_entry_over_fresh_miss():
     """An entry that was hot a round ago survives one quiet round (the point of LRFU)."""
     pol = ActionLRFU(EvictionConfig(decay=0.5))
