@@ -246,7 +246,8 @@ def main():
         return res
 
     # task-major: every config gets task t before any config gets task t+1, so whenever the run
-    # stops (time budget, preemption) all configs have run the same tasks
+    # stops (time budget, preemption) all configs have run the same tasks. Within a task, configs run
+    # in sweep order with all their runs, so ratio configs see every FullKV run of the task.
     tasks = range(args.start, args.start + args.n_tasks)
 
     def complete(t):
@@ -263,8 +264,8 @@ def main():
                       f"{args.hours:g}h budget ({hms(used + spent)} used)")
                 break
         ran = False
-        for run in range(args.runs):
-            for state in states:
+        for state in states:
+            for run in range(args.runs):
                 res = run_one(*state, task, run)
                 if res is not None:
                     spent += res["seconds"]

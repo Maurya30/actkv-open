@@ -176,3 +176,26 @@ def test_resumed_sweep_finishes_the_partial_task_then_respects_the_budget(tmp_pa
     assert tasks("full") == tasks("stream") == [0, 1]
     run(180)                              # budget already spent: no new task starts
     assert tasks("full") == tasks("stream") == [0, 1]
+
+
+def test_sweep_ratio_budget_uses_all_fullkv_runs_of_the_task(tmp_path, monkeypatch):
+    """With --runs 2, every run of a ratio config gets ratio * median over both FullKV runs."""
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: (tiny(), CharTok()))
+    budgets, full_trace = [], iter([300, 500])
+
+    def episode(session, env, fmt, task, *a, **k):
+        res = _stub_episode(session, env, fmt, task)
+        if session.budget is None:
+            return {**res, "trace_len": next(full_trace), "protected": 100}
+        budgets.append(session.budget.current)
+        return res
+
+    monkeypatch.setattr(run_eval, "run_episode", episode)
+    sweep = _write(tmp_path / "sweep.json", [
+        {"name": "full", "method": "full"},
+        {"name": "stream_r0.5", "method": "streaming", "budget_ratio": 0.5, "full_results": "full.jsonl"}])
+    monkeypatch.setattr(sys, "argv", ["run_eval.py", "--sweep", sweep, "--out-dir", str(tmp_path / "res"),
+                                      "--n-tasks", "1", "--runs", "2", "--device", "cpu"])
+    run_eval.main()
+    assert budgets == [150, 150]          # 0.5 * median(300 - 100, 500 - 100)
