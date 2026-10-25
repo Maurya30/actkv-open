@@ -72,3 +72,17 @@ def test_resume_keys_on_the_full_config(tmp_path, monkeypatch):
     rows = [json.loads(line) for line in out.read_text().splitlines()]
     assert [r["config"]["slack"] for r in rows] == [32, 64]
     assert rows[0]["config_id"] != rows[1]["config_id"]
+
+
+def test_no_thinking_uses_qwen_non_thinking_sampling(tmp_path, monkeypatch):
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: (tiny(), CharTok()))
+    monkeypatch.setattr(run_eval, "run_episode", _stub_episode)
+    seen = []
+    real = run_eval.ActKVSession
+    monkeypatch.setattr(run_eval, "ActKVSession", lambda *a, **k: seen.append(k["sampling"]) or real(*a, **k))
+    monkeypatch.setattr(sys, "argv", ["run_eval.py", "--method", "full", "--no-thinking", "--n-tasks", "1",
+                                      "--runs", "1", "--device", "cpu", "--out", str(tmp_path / "o.jsonl")])
+    run_eval.main()
+    sp = seen[0]
+    assert (sp.temperature, sp.top_p, sp.top_k) == (0.7, 0.8, 20)

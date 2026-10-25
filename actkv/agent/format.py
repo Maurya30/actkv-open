@@ -1,8 +1,11 @@
 """Incremental chat formatting.
 
-The cache is append-only, so we never re-render the whole conversation (Qwen3's template also
-strips <think> blocks from history, which would desync the cache). The first prompt goes through
-the tokenizer's chat template; later turns append only the new tool-response segment.
+The cache is append-only, so we never re-render the whole conversation. The first prompt goes
+through the tokenizer's chat template; later turns append only the new tool-response segment and
+the next generation prompt. In this one-query tool loop that matches Qwen3's template byte for byte
+in thinking mode. With thinking off, the template puts an empty think block on every generation
+prompt but drops it from history; an append-only cache keeps the old ones, which is the only
+difference.
 """
 from __future__ import annotations
 
@@ -22,18 +25,14 @@ class QwenFormat:
 
     def initial(self, system: str, task: str, tools: list[dict]) -> str:
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": task}]
-        kw = {"enable_thinking": self.enable_thinking}
-        try:
-            return self.tok.apply_chat_template(msgs, tools=tools, add_generation_prompt=True,
-                                                tokenize=False, **kw)
-        except TypeError:
-            return self.tok.apply_chat_template(msgs, tools=tools, add_generation_prompt=True,
-                                                tokenize=False)
+        return self.tok.apply_chat_template(msgs, tools=tools, add_generation_prompt=True,
+                                            tokenize=False, enable_thinking=self.enable_thinking)
 
     def observation(self, obs: str, assistant_closed: bool) -> str:
         close = "" if assistant_closed else "<|im_end|>"
+        no_think = "" if self.enable_thinking else "<think>\n\n</think>\n\n"   # on every turn, as the template
         return (f"{close}\n<|im_start|>user\n<tool_response>\n{obs}\n</tool_response>"
-                f"<|im_end|>\n<|im_start|>assistant\n")
+                f"<|im_end|>\n<|im_start|>assistant\n{no_think}")
 
     def parse_action(self, text: str) -> dict | None:
         m = self.tool_call_re.findall(text)

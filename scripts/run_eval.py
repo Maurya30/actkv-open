@@ -142,6 +142,11 @@ def main():
         ap.error(f"tasks {args.start}..{args.start + args.n_tasks - 1} exceed the {len(env)} available")
     model, tok = load_model(args.model, args.dtype, args.device)
     fmt = QwenFormat(tok, enable_thinking=not args.no_thinking)
+    # Qwen3's recommended sampling: T=0.6/top_p=0.95 with thinking, T=0.7/top_p=0.8 without (top_k=20)
+    sampling = (SamplingParams(temperature=0.7, top_p=0.8, top_k=20, greedy=args.greedy) if args.no_thinking
+                else SamplingParams(greedy=args.greedy))
+    if args.greedy and not args.no_thinking:
+        print("warning: Qwen3 advises against greedy decoding in thinking mode (endless repetitions)")
 
     per_task = full_lengths(args.full_results) if args.budget_ratio is not None else {}
     slack = args.slack
@@ -177,7 +182,7 @@ def main():
             policy = make_policy(args.method, ecfg) if args.method == "actkv" else make_policy(args.method)
             session = ActKVSession(model, tok, policy, budget=budget,
                                    detector=ActionRegionDetector.for_template(fmt.template),
-                                   sampling=SamplingParams(greedy=args.greedy),
+                                   sampling=sampling,
                                    mid_round_slack=slack, seed=1000 * task + run)
             res = run_episode(session, env, fmt, task, args.max_new_tokens, args.verbose)
             res.update(run=run, method=args.method, model=args.model, config=cfg, config_id=cid,
