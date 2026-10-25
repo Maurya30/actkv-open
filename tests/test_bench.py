@@ -12,3 +12,13 @@ def test_memory_is_measured_or_explicitly_missing():
     (row, *_) = bench.main(["--device", "cpu", "--small", "--iters", "1", "--reqs", "1"])
     assert row["actkv_extra_mb"] is None and row["gather_extra_mb"] is None   # no peak counter on CPU
     assert "not measured" in row["memory"]
+
+
+def test_json_output_says_which_kernel_path_ran(tmp_path):
+    import json
+    bench = load_script("benchmarks/bench_kernels.py")
+    out = tmp_path / "bench.json"
+    bench.main(["--device", "cpu", "--small", "--iters", "1", "--reqs", "1", "--out", str(out)])
+    data = json.loads(out.read_text())
+    assert data["kernel_path"] == bench.kernel_path() != "triton"   # never compiled Triton on CPU
+    assert data["note"] and data["device"] == "cpu" and len(data["rows"]) == 1

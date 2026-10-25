@@ -15,15 +15,19 @@ scores into keep masks with the same function and end in the same state. The ben
 that the two paths keep the same tokens and give the same decode attention output afterwards.
 
 Defaults: block_size=16, kv_heads=8, head_dim=128, q_heads=32, r in {1,4,16,64},
-compress 1K->0.5K, 2K->1.5K, 6K->4K. Meaningful timings need a CUDA GPU with triton.
+compress 1K->0.5K, 2K->1.5K, 6K->4K. Meaningful timings need a CUDA GPU with triton; the output
+(stdout and --out JSON) always says which kernel path ran: compiled Triton, the Triton interpreter,
+or the torch fallback.
 
-    python benchmarks/bench_kernels.py --device cuda
+    python benchmarks/bench_kernels.py --device cuda --out results/bench_kernels.json
 """
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
+import statistics
 import sys
 import time
 
@@ -34,15 +38,31 @@ if not torch.cuda.is_available():  # must be set before triton decorates the ker
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from actkv.kernels import compaction, lse_attn  # noqa: E402
 from actkv.paged import PagedKVCache, keep_mask_from_scores  # noqa: E402
 
 CASES = [(1024, 512), (2048, 1536), (6144, 4096)]
 REQS = [1, 4, 16, 64]
+NOTES = {
+    "triton": "compiled Triton kernels",
+    "triton-interpreter": "Triton interpreter on CPU: checks correctness only, the timings mean nothing",
+    "torch-fallback": "triton is not installed: the 'actkv' timings are the torch reference fallback, "
+                      "not the Triton kernels",
+}
+
+
+def kernel_path() -> str:
+    """Which code the 'actkv' column actually runs."""
+    if not (lse_attn.HAS_TRITON and compaction.HAS_TRITON):
+        return "torch-fallback"
+    return "triton-interpreter" if os.environ.get("TRITON_INTERPRET") == "1" else "triton"
 
 
 def _sync(dev):
     if dev == "cuda":
         torch.cuda.synchronize()
+    elif dev == "mps":
+        torch.mps.synchronize()
 
 
 def build(r, n, args, dev, dtype, seed=0):
@@ -114,6 +134,8 @@ def run_case(r, n, budget, args, dev, dtype):
 
     def timed(step):
         """Median time over --iters fresh caches, and the most extra memory one step allocated."""
+        for _ in range(args.warmup):                   # e.g. Triton JIT compilation, allocator growth
+            step(build(r, n, args, dev, dtype))
         times, extra = [], []
         for _ in range(args.iters):
             cache = build(r, n, args, dev, dtype)      # compaction mutates the cache
@@ -127,7 +149,7 @@ def run_case(r, n, budget, args, dev, dtype):
             times.append((time.perf_counter() - t) * 1e3)
             if dev == "cuda":
                 extra.append(torch.cuda.max_memory_allocated() - base)
-        return sorted(times)[len(times) // 2], (max(extra) / 2**20 if extra else None)
+        return statistics.median(times), (max(extra) / 2**20 if extra else None)
 
     actkv_ms, actkv_mb = timed(lambda c: actkv_step(c, reqs, q, lse, budget))
     gather_ms, gather_mb = timed(lambda c: gather_step(c, reqs, q, lse, budget, slots))
@@ -146,15 +168,25 @@ def main(argv=None):
     ap.add_argument("--q-heads", type=int, default=32)
     ap.add_argument("--head-dim", type=int, default=128)
     ap.add_argument("--iters", type=int, default=5)
-    ap.add_argument("--reqs", type=int, nargs="*", default=REQS)
+    ap.add_argument("--warmup", type=int, default=1, help="untimed steps per path and case")
+    ap.add_argument("--reqs", type=int, nargs="+", help=f"concurrent requests (default {REQS}; --small: [1, 2])")
     ap.add_argument("--small", action="store_true", help="tiny sizes for a CPU smoke test")
+    ap.add_argument("--out", help="write the results as JSON")
     args = ap.parse_args(argv)
     dev = args.device
+    path = kernel_path()
+    if args.iters < 1:
+        ap.error("--iters must be at least 1")
+    if path == "triton" and dev != "cuda":
+        ap.error("compiled Triton kernels need --device cuda (TRITON_INTERPRET=1 runs them on CPU)")
     dtype = torch.float16 if dev == "cuda" else torch.float32
     cases = [(128, 64)] if args.small else CASES
-    reqs = [1, 2] if args.small else args.reqs
+    reqs = args.reqs or ([1, 2] if args.small else REQS)
 
-    print(f"device={dev} block={args.block_size} kv_heads={args.kv_heads} head_dim={args.head_dim}")
+    print(f"device={dev} dtype={str(dtype).removeprefix('torch.')} kernels={path} block={args.block_size} "
+          f"kv_heads={args.kv_heads} q_heads={args.q_heads} head_dim={args.head_dim} iters={args.iters}")
+    if path != "triton":
+        print(f"*** {NOTES[path]} ***")
     print(f"{'case':>14} {'r':>4} {'actkv ms':>10} {'gather ms':>10} {'speedup':>8} "
           f"{'actkv MB':>9} {'gather MB':>10} {'check':>9}")
     rows = []
@@ -166,6 +198,21 @@ def main(argv=None):
             mb = [f"{v:.1f}" if v is not None else "n/a" for v in (row["actkv_extra_mb"], row["gather_extra_mb"])]
             print(f"{f'{n}->{budget}':>14} {r:>4} {row['actkv_ms']:>10.3f} {row['gather_ms']:>10.3f} "
                   f"{row['gather_ms'] / row['actkv_ms']:>7.2f}x {mb[0]:>9} {mb[1]:>10} {check:>9}")
+    if args.out:
+        try:
+            import triton
+            triton_version = triton.__version__
+        except ImportError:
+            triton_version = None
+        meta = {"kernel_path": path, "note": NOTES[path], "device": dev,
+                "gpu": torch.cuda.get_device_name() if dev == "cuda" else None,
+                "dtype": str(dtype).removeprefix("torch."), "torch": torch.__version__, "triton": triton_version,
+                "n_layers": 1, "block_size": args.block_size, "kv_heads": args.kv_heads,
+                "q_heads": args.q_heads, "head_dim": args.head_dim, "iters": args.iters, "warmup": args.warmup}
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        with open(args.out, "w") as f:
+            json.dump({**meta, "rows": rows}, f, indent=2)
+        print(f"wrote {args.out}")
     return rows
 
 
