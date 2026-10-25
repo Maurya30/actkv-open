@@ -185,7 +185,9 @@ class ActKVSession:
         self.round_tokens = 0
         if self.budget is None:
             return
-        b = self.budget.next_budget()
+        # Algorithm 2 adjusts the budget only when a compression is actually triggered
+        over = self.phys - self.protected > self.budget.current
+        b = self.budget.next_budget() if over else self.budget.current
         self.stats.budgets.append(b)
         self._compress(b)
 

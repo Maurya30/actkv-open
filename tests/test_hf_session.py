@@ -109,3 +109,20 @@ def test_actkv_policy_collects_action_attention_and_compresses():
     assert pol.ks.shape == (3, 18)
     # keep scores are non-negative and, after one step, equal to the hit-masked action attention
     assert (pol.ks >= 0).all()
+
+
+def test_adaptive_budget_only_adjusts_when_compression_is_needed():
+    """Algorithm 2 adjusts the budget when a compression is triggered, not at every round end."""
+    from actkv.budget import ConfidenceBudget
+    from actkv.config import BudgetConfig
+    b = ConfidenceBudget(BudgetConfig(init_budget=64, window=4, stride=2))
+    b.tl = [float(v) for v in range(50, 0, -1)]         # confidence trending down
+    s = _session(tiny_model(4), StreamingLLM(), budget=b)
+    s.prefill(torch.randint(0, 90, (6,)), protected=True)
+    s.prefill(torch.randint(0, 90, (30,)))              # 30 evictable entries, under the budget
+    s.end_round()
+    s.end_round()
+    assert b.current == 64 and b.history == [64]
+    s.prefill(torch.randint(0, 90, (50,)))              # 80 > 64: a compression is due
+    s.end_round()
+    assert b.current == 112                             # grows once (x1.75) because confidence fell
