@@ -9,10 +9,10 @@ from .envs import Env
 
 def run_episode(session: ActKVSession, env: Env, fmt, task_idx: int,
                 max_new_tokens: int = 4096, verbose: bool = False) -> dict:
+    t0 = time.time()
     session.reset()
     task = env.reset(task_idx)
     session.prefill(fmt.initial(env.system, task, env.tools), protected=True)
-    t0 = time.time()
     success, rounds, invalid = False, 0, 0
     transcript = []
     for rounds in range(1, env.max_rounds + 1):

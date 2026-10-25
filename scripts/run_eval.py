@@ -13,6 +13,9 @@ Examples
 
   # ALFWorld (after `pip install alfworld && alfworld-download`); task i = i-th game of the split
   python scripts/run_eval.py --env alfworld --alfworld-split eval_out_of_distribution ...
+
+  # Many configs in one process (model loaded once), task-major, stopping before a time budget
+  python scripts/run_eval.py --sweep configs/vault_sweep.json --out-dir results/vault --hours 3
 """
 from __future__ import annotations
 
@@ -22,6 +25,7 @@ import json
 import os
 import statistics
 import sys
+import time
 
 import torch
 
@@ -57,12 +61,21 @@ def full_lengths(path):
     return {k: int(statistics.median(v)) for k, v in lens.items()}
 
 
+def full_ora_means(path):
+    """Mean FullKV ORA length per task: the baselines' mid-round slack (L-bar) for that task."""
+    ora = {}
+    for r in read_rows(path):
+        if r.get("method", "full") == "full":
+            ora.setdefault(r["task"], []).extend(r["ora_lens"])
+    return {k: int(statistics.mean(v)) for k, v in ora.items() if v}
+
+
 def run_config(args) -> dict:
     """Every setting that can change an episode's outcome; resume and summaries key on it."""
     cfg = {"model": args.model, "dtype": args.dtype, "env": args.env, "method": args.method,
            "adaptive": args.adaptive, "bidirectional": args.bidirectional, "budget": args.budget,
            "budget_ratio": args.budget_ratio, "full_results": args.full_results,
-           "slack": args.slack if args.slack is not None else ("fullkv-mean" if args.full_results else None),
+           "slack": args.slack if args.slack is not None else ("fullkv-task-mean" if args.full_results else None),
            "decay": args.decay, "top_p_hit": args.top_p_hit, "head_reduce": args.head_reduce,
            "max_new_tokens": args.max_new_tokens, "greedy": args.greedy, "no_thinking": args.no_thinking}
     if args.method != "actkv":            # ActKV's knobs don't affect the other methods
@@ -78,8 +91,8 @@ def config_id(cfg: dict) -> str:
     return hashlib.sha1(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:12]
 
 
-def check_args(ap, args):
-    """Reject bad flag combinations before the (slow) model load."""
+def check_args(ap, args, produced=()):
+    """Reject bad flag combinations before the (slow) model load. `produced`: files this run writes."""
     modes = [flag for flag, on in (("--adaptive", args.adaptive), ("--budget", args.budget is not None),
                                    ("--budget-ratio", args.budget_ratio is not None)) if on]
     if args.method == "full":
@@ -96,13 +109,39 @@ def check_args(ap, args):
             ap.error("--budget-ratio must be in (0, 1]")
         if not args.full_results:
             ap.error("--budget-ratio needs --full-results (the FullKV jsonl)")
-    if args.full_results and not os.path.isfile(args.full_results):
+    if args.full_results and args.full_results not in produced and not os.path.isfile(args.full_results):
         ap.error(f"--full-results {args.full_results} does not exist")
     if args.n_tasks <= 0 or args.runs <= 0:
         ap.error("--n-tasks and --runs must be positive")
     if args.alfworld_config and not os.path.isfile(args.alfworld_config):
         ap.error(f"--alfworld-config {args.alfworld_config} does not exist "
                  "(alfworld's configs/base_config.yaml lives in its GitHub repo, not the pip package)")
+
+
+SWEEP_KEYS = {"method", "adaptive", "bidirectional", "budget", "budget_ratio", "full_results", "slack",
+              "decay", "top_p_hit", "head_reduce"}
+
+
+def load_sweep(ap, args):
+    """--sweep FILE: a JSON list of {"name": ..., <per-config flags>}. The other flags are shared and
+    come from the command line; relative full_results paths are resolved against --out-dir."""
+    with open(args.sweep) as f:
+        entries = json.load(f)
+    jobs = []
+    for e in entries:
+        e = dict(e)
+        name = e.pop("name", None)
+        if not name or set(e) - SWEEP_KEYS:
+            ap.error(f"sweep entry {name!r}: needs a 'name'; unknown keys {sorted(set(e) - SWEEP_KEYS)}")
+        if e.get("full_results") and not os.path.isabs(e["full_results"]):
+            e["full_results"] = os.path.join(args.out_dir, e["full_results"])
+        c = argparse.Namespace(**{**vars(args), **{k: ap.get_default(k) for k in SWEEP_KEYS}, **e})
+        jobs.append((os.path.join(args.out_dir, f"{name}.jsonl"), c))
+    return jobs
+
+
+def hms(seconds):
+    return f"{int(seconds // 3600)}h{int(seconds % 3600 // 60):02d}m"
 
 
 def main():
@@ -122,7 +161,8 @@ def main():
                     help="per-trace budget = ratio * FullKV trace length (excluding the protected prompt)")
     ap.add_argument("--full-results", help="FullKV jsonl, needed with --budget-ratio")
     ap.add_argument("--slack", type=int, default=None,
-                    help="baselines: compress mid-round past budget+slack (default: mean FullKV ORA length)")
+                    help="baselines: compress mid-round past budget+slack (default: that task's mean FullKV "
+                         "ORA length, if --full-results is given)")
     ap.add_argument("--decay", type=float, default=0.5)
     ap.add_argument("--top-p-hit", type=float, default=0.9)
     ap.add_argument("--head-reduce", default="mean", choices=["mean", "max"])
@@ -132,10 +172,18 @@ def main():
     ap.add_argument("--max-new-tokens", type=int, default=4096)
     ap.add_argument("--greedy", action="store_true")
     ap.add_argument("--no-thinking", action="store_true")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", help="results jsonl for a single config")
+    ap.add_argument("--sweep", help="JSON list of configs to run task-major in one process (with --out-dir)")
+    ap.add_argument("--out-dir", help="with --sweep: one <name>.jsonl per config")
+    ap.add_argument("--hours", type=float, help="don't start a task that would end past this budget "
+                                                "(counts episode time already in the output files)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
-    check_args(ap, args)
+    if bool(args.out) == bool(args.sweep) or bool(args.sweep) != bool(args.out_dir):
+        ap.error("give either --out, or --sweep with --out-dir")
+    jobs = load_sweep(ap, args) if args.sweep else [(args.out, args)]
+    for _, c in jobs:
+        check_args(ap, c, produced={out for out, _ in jobs})
 
     env = (make_env("alfworld", config_path=args.alfworld_config, split=args.alfworld_split)
            if args.env == "alfworld" else make_env("vault", n_tasks=args.start + args.n_tasks))
@@ -148,52 +196,77 @@ def main():
                 else SamplingParams(greedy=args.greedy))
     if args.greedy and not args.no_thinking:
         print("warning: Qwen3 advises against greedy decoding in thinking mode (endless repetitions)")
+    gpu = torch.cuda.get_device_name(torch.device(args.device)) if args.device.startswith("cuda") else None
 
-    per_task = full_lengths(args.full_results) if args.budget_ratio is not None else {}
-    slack = args.slack
-    if slack is None and args.full_results:
-        ora = []
-        with open(args.full_results) as f:
-            for line in f:
-                ora += json.loads(line)["ora_lens"]
-        slack = int(statistics.mean(ora)) if ora else None
+    used = 0.0        # episode seconds already in the output files (resume)
+    states = []
+    for out, c in jobs:
+        cfg = run_config(c)
+        cid = config_id(cfg)
+        rows = [r for r in (read_rows(out) if os.path.exists(out) else []) if r.get("config_id") == cid]
+        used += sum(r.get("seconds", 0.0) for r in rows)
+        states.append((out, c, cfg, cid, {(r["task"], r["run"]) for r in rows}))
 
-    ecfg = EvictionConfig(decay=args.decay, top_p=args.top_p_hit, head_reduce=args.head_reduce)
-    cfg = run_config(args)
-    cid = config_id(cfg)
-    done = set()
-    if os.path.exists(args.out):  # resume: only rows of this exact config count as done
-        done = {(r.get("config_id"), r["task"], r["run"]) for r in read_rows(args.out)}
+    def run_one(out, c, cfg, cid, done, task, run):
+        if (task, run) in done:      # resume: only rows of this exact config count as done
+            return None
+        if c.method == "full":
+            budget = None
+        elif c.adaptive:
+            budget = ConfidenceBudget(BudgetConfig(bidirectional=c.bidirectional))
+        elif c.budget_ratio is not None:
+            base = full_lengths(c.full_results).get(task) if os.path.exists(c.full_results) else None
+            if base is None:
+                print(f"skip {os.path.basename(out)} task {task}: no FullKV length")
+                return None
+            budget = FixedBudget(max(1, int(c.budget_ratio * base)))
+        else:
+            budget = FixedBudget(c.budget)
+        slack = c.slack
+        if slack is None and c.full_results and c.method in ("snapkv", "streaming"):
+            slack = full_ora_means(c.full_results).get(task) if os.path.exists(c.full_results) else None
+            if slack is None:
+                print(f"skip {os.path.basename(out)} task {task}: no FullKV ORA lengths")
+                return None
+        ecfg = EvictionConfig(decay=c.decay, top_p=c.top_p_hit, head_reduce=c.head_reduce)
+        policy = make_policy(c.method, ecfg) if c.method == "actkv" else make_policy(c.method)
+        session = ActKVSession(model, tok, policy, budget=budget,
+                               detector=ActionRegionDetector.for_template(fmt.template),
+                               sampling=sampling, mid_round_slack=slack, seed=1000 * task + run)
+        res = run_episode(session, env, fmt, task, c.max_new_tokens, c.verbose)
+        res.update(run=run, method=c.method, model=c.model, config=cfg, config_id=cid,
+                   game=getattr(env, "game_id", None), device=c.device, gpu=gpu)
+        # the file is created by the first finished episode, so failed runs leave nothing behind
+        os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+        with open(out, "a") as f:
+            f.write(json.dumps(res) + "\n")
+        print(f"{os.path.basename(out)} task {task} run {run}: success={res['success']} rounds={res['rounds']} "
+              f"peak={res['peak_entries']} trace={res['trace_len']} {res['seconds']:.0f}s")
+        return res
 
-    for task in range(args.start, args.start + args.n_tasks):
+    # task-major: every config gets task t before any config gets task t+1, so whenever the run
+    # stops (time budget, preemption) all configs have run the same tasks
+    tasks = range(args.start, args.start + args.n_tasks)
+    spent, finished, t0 = 0.0, 0, time.time()
+    for k, task in enumerate(tasks):
+        if args.hours and finished:
+            per_task = spent / finished
+            if used + spent + per_task > args.hours * 3600:
+                print(f"stopping before task {task}: another task (~{hms(per_task)}) would pass the "
+                      f"{args.hours:g}h budget ({hms(used + spent)} used)")
+                break
+        ran = False
         for run in range(args.runs):
-            if (cid, task, run) in done:
-                continue
-            if args.method == "full":
-                budget = None
-            elif args.adaptive:
-                budget = ConfidenceBudget(BudgetConfig(bidirectional=args.bidirectional))
-            elif args.budget_ratio is not None:
-                if task not in per_task:
-                    print(f"skip task {task}: no FullKV length")
-                    continue
-                budget = FixedBudget(max(1, int(args.budget_ratio * per_task[task])))
-            else:
-                budget = FixedBudget(args.budget)
-            policy = make_policy(args.method, ecfg) if args.method == "actkv" else make_policy(args.method)
-            session = ActKVSession(model, tok, policy, budget=budget,
-                                   detector=ActionRegionDetector.for_template(fmt.template),
-                                   sampling=sampling,
-                                   mid_round_slack=slack, seed=1000 * task + run)
-            res = run_episode(session, env, fmt, task, args.max_new_tokens, args.verbose)
-            res.update(run=run, method=args.method, model=args.model, config=cfg, config_id=cid,
-                       game=getattr(env, "game_id", None))
-            # the file is created by the first finished episode, so failed runs leave nothing behind
-            os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-            with open(args.out, "a") as out:
-                out.write(json.dumps(res) + "\n")
-            print(f"task {task} run {run}: success={res['success']} rounds={res['rounds']} "
-                  f"peak={res['peak_entries']} trace={res['trace_len']} {res['seconds']:.0f}s")
+            for state in states:
+                res = run_one(*state, task, run)
+                if res is not None:
+                    spent += res["seconds"]
+                    ran = True
+        finished += ran
+        if ran and len(jobs) > 1:
+            per_task = spent / finished
+            print(f"[{k + 1}/{len(tasks)} tasks] {hms(used + spent)} used, {hms(per_task)} per task, "
+                  f"ETA for all tasks {hms((len(tasks) - k - 1) * per_task)} (wall {hms(time.time() - t0)})")
 
 
 if __name__ == "__main__":

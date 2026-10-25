@@ -92,3 +92,53 @@ def test_ratio_budget_base_excludes_the_protected_prompt(tmp_path):
     """Budgets exclude the protected prefix, so the ratio base must too."""
     run_eval = load_script("scripts/run_eval.py")
     assert run_eval.full_lengths(_full_file(tmp_path)) == {0: 800}     # trace_len 1000 - protected 200
+
+
+def _write(path, obj):
+    path.write_text(json.dumps(obj))
+    return str(path)
+
+
+def test_sweep_runs_task_major_and_stops_before_the_time_budget(tmp_path, monkeypatch):
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: (tiny(), CharTok()))
+    budgets = []
+
+    def episode(session, env, fmt, task, *a, **k):     # every episode "takes" 10 s
+        budgets.append(session.budget.current if session.budget else None)
+        return {**_stub_episode(session, env, fmt, task), "trace_len": 300, "protected": 100, "seconds": 10.0}
+
+    monkeypatch.setattr(run_eval, "run_episode", episode)
+    sweep = _write(tmp_path / "sweep.json", [
+        {"name": "full", "method": "full"},
+        {"name": "stream_r0.5", "method": "streaming", "budget_ratio": 0.5, "full_results": "full.jsonl"}])
+    out = tmp_path / "res"
+    argv = ["run_eval.py", "--sweep", sweep, "--out-dir", str(out), "--n-tasks", "5", "--runs", "1",
+            "--device", "cpu", "--hours"]
+
+    def tasks(name):
+        return [json.loads(line)["task"] for line in (out / f"{name}.jsonl").read_text().splitlines()]
+
+    monkeypatch.setattr(sys, "argv", argv + [str(45 / 3600)])   # 20 s per task -> a third would end at 60 s
+    run_eval.main()
+    assert tasks("full") == tasks("stream_r0.5") == [0, 1]
+    assert budgets == [None, 100, None, 100]                     # 0.5 * (300 - 100) from that task's FullKV
+    monkeypatch.setattr(sys, "argv", argv + [str(85 / 3600)])   # resume: 40 s used, room for two more tasks
+    run_eval.main()
+    assert tasks("full") == tasks("stream_r0.5") == [0, 1, 2, 3]
+
+
+def test_baseline_slack_is_that_tasks_mean_fullkv_round_length(tmp_path, monkeypatch):
+    run_eval = load_script("scripts/run_eval.py")
+    monkeypatch.setattr(run_eval, "load_model", lambda *a, **k: (tiny(), CharTok()))
+    slacks = []
+    monkeypatch.setattr(run_eval, "run_episode",
+                        lambda session, *a, **k: slacks.append(session.slack) or _stub_episode(session, *a, **k))
+    full = tmp_path / "full.jsonl"
+    full.write_text("".join(json.dumps({"task": t, "run": 0, "method": "full", "trace_len": 9, "ora_lens": o}) + "\n"
+                            for t, o in [(0, [10, 30]), (1, [100])]))
+    monkeypatch.setattr(sys, "argv", ["run_eval.py", "--method", "snapkv", "--budget", "64", "--full-results",
+                                      str(full), "--n-tasks", "2", "--runs", "1", "--device", "cpu",
+                                      "--out", str(tmp_path / "o.jsonl")])
+    run_eval.main()
+    assert slacks == [20, 100]
