@@ -5,7 +5,7 @@ from conftest import load_script
 README = "# x\n\nintro\n\n<!-- results:begin -->\nNo GPU results yet.\n<!-- results:end -->\n\n## after\n"
 ENV = {"device": "cuda", "gpu": "NVIDIA A100-SXM4-80GB", "torch": "2.9", "cuda": "12.8", "triton": "3.5",
        "transformers": "4.57", "git_sha": "abcdef1234", "date": "2026-10-26T00:00:00+00:00"}
-CONFIG = {"name": "actkv (adaptive)", "n_tasks": 23, "acc": 0.61, "acc_ci": [0.4, 0.8], "delta_vs_full": -0.04,
+CONFIG = {"name": "actkv (adaptive)", "n_tasks": 23, "n_episodes": 23, "acc": 0.61, "acc_ci": [0.4, 0.8], "delta_vs_full": -0.04,
           "delta_ci": [-0.2, 0.1], "peak_vs_full": 0.3, "trace_vs_full": 1.0, "devices": ["cuda"],
           "config": {"model": "Qwen/Qwen3-8B", "no_thinking": True, "max_new_tokens": 1024}}
 
@@ -25,7 +25,7 @@ def test_section_is_generated_from_gpu_results(tmp_path):
     res, readme = fixture(tmp_path)
     assert update.main(["--results", str(res), "--readme", str(readme)]) == 0
     text = readme.read_text()
-    assert "| actkv (adaptive) | 23 | 0.610 [0.40, 0.80] | -0.040 [-0.20, 0.10] | 30% | 100% |" in text
+    assert "| actkv (adaptive) | 23 | 23 | 0.610 [0.40, 0.80] | -0.040 [-0.20, 0.10] | 30% | 100% |" in text
     assert "NVIDIA A100-SXM4-80GB" in text and "No GPU results yet" not in text
     assert text.startswith("# x\n\nintro\n\n<!-- results:begin -->") and text.endswith("<!-- results:end -->\n\n## after\n")
 
@@ -43,3 +43,14 @@ def test_check_does_not_write(tmp_path):
     res, readme = fixture(tmp_path)
     assert update.main(["--results", str(res), "--readme", str(readme), "--check"]) == 0
     assert readme.read_text() == README
+
+
+def test_episode_counts_come_from_the_data(tmp_path):
+    update = load_script("scripts/update_readme.py")
+    res, readme = fixture(tmp_path)
+    summary = json.loads((res / "vault" / "summary.json").read_text())
+    summary["configs"][0]["n_episodes"] = 46                     # two runs per task
+    (res / "vault" / "summary.json").write_text(json.dumps(summary))
+    assert update.main(["--results", str(res), "--readme", str(readme)]) == 0
+    text = readme.read_text()
+    assert "| actkv (adaptive) | 23 | 46 |" in text and "one run each" not in text

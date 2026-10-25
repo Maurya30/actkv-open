@@ -62,13 +62,13 @@ def render(env, bench, summaries, results_dir, readme_dir):
         cfg = s["configs"][0]["config"]
         lines += [f"### {name}", "",
                   f"Model `{cfg.get('model')}`, thinking {'off' if cfg.get('no_thinking') else 'on'}, "
-                  f"up to {cfg.get('max_new_tokens')} new tokens per round. *tasks* is the number of tasks each "
-                  f"config ran (one run each). Accuracy has a 95% bootstrap CI over tasks; Δ is the paired "
+                  f"up to {cfg.get('max_new_tokens')} new tokens per round. *tasks* and *episodes* are each "
+                  f"config's sample size. Accuracy has a 95% bootstrap CI over tasks; Δ is the paired "
                   f"difference from FullKV on the same tasks. Peak KV and trace length are relative to FullKV.", "",
-                  "| config | tasks | accuracy [95% CI] | Δ vs FullKV [95% CI] | peak KV / FullKV | trace / FullKV |",
-                  "|---|---:|---:|---:|---:|---:|"]
+                  "| config | tasks | episodes | accuracy [95% CI] | Δ vs FullKV [95% CI] | peak KV / FullKV | trace / FullKV |",
+                  "|---|---:|---:|---:|---:|---:|---:|"]
         for c in s["configs"]:
-            lines.append(f"| {c['name']} | {c['n_tasks']} | {ci(c['acc'], c['acc_ci'])} | "
+            lines.append(f"| {c['name']} | {c['n_tasks']} | {c['n_episodes']} | {ci(c['acc'], c['acc_ci'])} | "
                          f"{ci(c['delta_vs_full'], c['delta_ci'], signed=True)} | {pct(c['peak_vs_full'])} | "
                          f"{pct(c['trace_vs_full'])} |")
         png = os.path.join(results_dir, name, "pareto.png")
