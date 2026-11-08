@@ -1,0 +1,226 @@
+{
+  "full": "results/alfworld/full.jsonl",
+  "bootstrap": {
+    "unit": "task",
+    "resamples": 2000,
+    "level": 0.95,
+    "seed": 0
+  },
+  "configs": [
+    {
+      "name": "FullKV",
+      "config_id": "ac4d7cb21290",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "alfworld",
+        "method": "full",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": null,
+        "full_results": null,
+        "slack": null,
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true,
+        "alfworld_split": "eval_out_of_distribution",
+        "alfworld_config": null
+      },
+      "n_tasks": 1,
+      "n_episodes": 1,
+      "acc": 0.0,
+      "acc_ci": [
+        null,
+        null
+      ],
+      "n_common_tasks": 1,
+      "delta_vs_full": 0.0,
+      "delta_ci": [
+        null,
+        null
+      ],
+      "acc_vs_full": null,
+      "peak_vs_full": 1.0,
+      "trace_vs_full": 1.0,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (adaptive)",
+      "config_id": "608aa7643cd3",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "alfworld",
+        "method": "actkv",
+        "adaptive": true,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": null,
+        "full_results": null,
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true,
+        "alfworld_split": "eval_out_of_distribution",
+        "alfworld_config": null
+      },
+      "n_tasks": 1,
+      "n_episodes": 1,
+      "acc": 0.0,
+      "acc_ci": [
+        null,
+        null
+      ],
+      "n_common_tasks": 1,
+      "delta_vs_full": 0.0,
+      "delta_ci": [
+        null,
+        null
+      ],
+      "acc_vs_full": null,
+      "peak_vs_full": 0.3240170535291331,
+      "trace_vs_full": 1.0,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (r=0.2)",
+      "config_id": "067c5b84904b",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "alfworld",
+        "method": "actkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.2,
+        "full_results": "full.jsonl",
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true,
+        "alfworld_split": "eval_out_of_distribution",
+        "alfworld_config": null
+      },
+      "n_tasks": 1,
+      "n_episodes": 1,
+      "acc": 0.0,
+      "acc_ci": [
+        null,
+        null
+      ],
+      "n_common_tasks": 1,
+      "delta_vs_full": 0.0,
+      "delta_ci": [
+        null,
+        null
+      ],
+      "acc_vs_full": null,
+      "peak_vs_full": 0.25333964945523446,
+      "trace_vs_full": 1.0,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "snapkv (r=0.2)",
+      "config_id": "d1d8ba00c295",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "alfworld",
+        "method": "snapkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.2,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true,
+        "alfworld_split": "eval_out_of_distribution",
+        "alfworld_config": null
+      },
+      "n_tasks": 1,
+      "n_episodes": 1,
+      "acc": 0.0,
+      "acc_ci": [
+        null,
+        null
+      ],
+      "n_common_tasks": 1,
+      "delta_vs_full": 0.0,
+      "delta_ci": [
+        null,
+        null
+      ],
+      "acc_vs_full": null,
+      "peak_vs_full": 0.2531501657981999,
+      "trace_vs_full": 1.0,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "streaming (r=0.2)",
+      "config_id": "f3d6399d9bc8",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "alfworld",
+        "method": "streaming",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.2,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true,
+        "alfworld_split": "eval_out_of_distribution",
+        "alfworld_config": null
+      },
+      "n_tasks": 1,
+      "n_episodes": 1,
+      "acc": 0.0,
+      "acc_ci": [
+        null,
+        null
+      ],
+      "n_common_tasks": 1,
+      "delta_vs_full": 0.0,
+      "delta_ci": [
+        null,
+        null
+      ],
+      "acc_vs_full": null,
+      "peak_vs_full": 0.2531501657981999,
+      "trace_vs_full": 1.0,
+      "devices": [
+        "cuda"
+      ]
+    }
+  ]
+}

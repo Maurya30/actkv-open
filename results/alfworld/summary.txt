@@ -1,0 +1,8 @@
+config                       tasks           acc [95% CI]      vs FullKV [95% CI]  peak/full  trace/full
+FullKV                           1                  0.000                  +0.000     100.0%      100.0%
+actkv (adaptive)                 1                  0.000                  +0.000      32.4%      100.0%
+actkv (r=0.2)                    1                  0.000                  +0.000      25.3%      100.0%
+snapkv (r=0.2)                   1                  0.000                  +0.000      25.3%      100.0%
+streaming (r=0.2)                1                  0.000                  +0.000      25.3%      100.0%
+wrote results/alfworld/pareto.png
+wrote results/alfworld/summary.json

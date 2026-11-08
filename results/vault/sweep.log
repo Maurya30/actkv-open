@@ -1,0 +1,68 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Fetching 5 files:   0%|          | 0/5 [00:00<?, ?it/s]Fetching 5 files:  20%|██        | 1/5 [00:03<00:12,  3.09s/it]Fetching 5 files:  40%|████      | 2/5 [00:15<00:26,  8.82s/it]Fetching 5 files:  60%|██████    | 3/5 [00:35<00:27, 13.83s/it]Fetching 5 files:  80%|████████  | 4/5 [00:48<00:13, 13.42s/it]Fetching 5 files: 100%|██████████| 5/5 [00:50<00:00,  9.30s/it]Fetching 5 files: 100%|██████████| 5/5 [00:50<00:00, 10.10s/it]
+Loading weights:   0%|          | 0/399 [00:00<?, ?it/s]Loading weights: 100%|██████████| 399/399 [00:00<00:00, 8628.65it/s]
+full.jsonl task 0 run 0: success=True rounds=15 peak=3626 trace=3626 161s
+actkv_adaptive.jsonl task 0 run 0: success=False rounds=15 peak=1151 trace=3626 161s
+actkv_adaptive_bidir.jsonl task 0 run 0: success=False rounds=15 peak=1151 trace=3626 166s
+actkv_r0.05.jsonl task 0 run 0: success=False rounds=15 peak=804 trace=3622 163s
+actkv_r0.1.jsonl task 0 run 0: success=False rounds=15 peak=969 trace=3626 164s
+actkv_r0.2.jsonl task 0 run 0: success=False rounds=15 peak=1299 trace=3626 165s
+actkv_r0.3.jsonl task 0 run 0: success=False rounds=15 peak=1630 trace=3626 168s
+snapkv_r0.05.jsonl task 0 run 0: success=False rounds=16 peak=784 trace=3648 175s
+snapkv_r0.1.jsonl task 0 run 0: success=False rounds=16 peak=949 trace=4377 169s
+snapkv_r0.2.jsonl task 0 run 0: success=False rounds=16 peak=1279 trace=3909 169s
+snapkv_r0.3.jsonl task 0 run 0: success=False rounds=15 peak=1610 trace=4104 158s
+streaming_r0.05.jsonl task 0 run 0: success=False rounds=16 peak=746 trace=3365 170s
+streaming_r0.1.jsonl task 0 run 0: success=False rounds=15 peak=949 trace=3622 162s
+streaming_r0.2.jsonl task 0 run 0: success=False rounds=15 peak=1279 trace=3625 166s
+streaming_r0.3.jsonl task 0 run 0: success=True rounds=15 peak=1610 trace=3626 166s
+[1/50 tasks] 0h41m used, 0h41m per task, ETA for all tasks 33h49m (wall 0h41m)
+full.jsonl task 1 run 0: success=True rounds=12 peak=2562 trace=2562 135s
+actkv_adaptive.jsonl task 1 run 0: success=True rounds=10 peak=1158 trace=2468 112s
+actkv_adaptive_bidir.jsonl task 1 run 0: success=True rounds=10 peak=1158 trace=2468 109s
+actkv_r0.05.jsonl task 1 run 0: success=False rounds=9 peak=758 trace=2420 98s
+actkv_r0.1.jsonl task 1 run 0: success=False rounds=9 peak=870 trace=2420 97s
+actkv_r0.2.jsonl task 1 run 0: success=True rounds=9 peak=1094 trace=2421 99s
+actkv_r0.3.jsonl task 1 run 0: success=True rounds=9 peak=1284 trace=2421 99s
+snapkv_r0.05.jsonl task 1 run 0: success=False rounds=16 peak=735 trace=4403 171s
+snapkv_r0.1.jsonl task 1 run 0: success=False rounds=16 peak=847 trace=4145 171s
+snapkv_r0.2.jsonl task 1 run 0: success=False rounds=16 peak=1071 trace=3669 176s
+snapkv_r0.3.jsonl task 1 run 0: success=True rounds=12 peak=1262 trace=2562 135s
+streaming_r0.05.jsonl task 1 run 0: success=False rounds=16 peak=735 trace=3964 176s
+streaming_r0.1.jsonl task 1 run 0: success=False rounds=11 peak=847 trace=2518 119s
+streaming_r0.2.jsonl task 1 run 0: success=False rounds=9 peak=1071 trace=2420 98s
+streaming_r0.3.jsonl task 1 run 0: success=False rounds=12 peak=1262 trace=2561 133s
+[2/50 tasks] 1h13m used, 0h36m per task, ETA for all tasks 29h25m (wall 1h13m)
+full.jsonl task 2 run 0: success=True rounds=7 peak=1861 trace=1861 75s
+actkv_adaptive.jsonl task 2 run 0: success=True rounds=7 peak=1124 trace=1861 76s
+actkv_adaptive_bidir.jsonl task 2 run 0: success=True rounds=7 peak=1124 trace=1861 76s
+actkv_r0.05.jsonl task 2 run 0: success=False rounds=8 peak=687 trace=2144 84s
+actkv_r0.1.jsonl task 2 run 0: success=False rounds=7 peak=764 trace=1860 75s
+actkv_r0.2.jsonl task 2 run 0: success=True rounds=7 peak=919 trace=1861 74s
+actkv_r0.3.jsonl task 2 run 0: success=True rounds=7 peak=1073 trace=1861 75s
+snapkv_r0.05.jsonl task 2 run 0: success=False rounds=16 peak=666 trace=4664 165s
+snapkv_r0.1.jsonl task 2 run 0: success=False rounds=16 peak=744 trace=4154 167s
+snapkv_r0.2.jsonl task 2 run 0: success=False rounds=10 peak=898 trace=2694 104s
+snapkv_r0.3.jsonl task 2 run 0: success=True rounds=7 peak=1052 trace=1861 75s
+streaming_r0.05.jsonl task 2 run 0: success=False rounds=16 peak=659 trace=1778 181s
+streaming_r0.1.jsonl task 2 run 0: success=False rounds=6 peak=744 trace=1813 63s
+streaming_r0.2.jsonl task 2 run 0: success=False rounds=6 peak=898 trace=1813 63s
+streaming_r0.3.jsonl task 2 run 0: success=False rounds=7 peak=1052 trace=1860 75s
+[3/50 tasks] 1h37m used, 0h32m per task, ETA for all tasks 25h25m (wall 1h37m)
+full.jsonl task 3 run 0: success=True rounds=10 peak=2690 trace=2690 109s
+actkv_adaptive.jsonl task 3 run 0: success=False rounds=12 peak=1153 trace=2784 134s
+actkv_adaptive_bidir.jsonl task 3 run 0: success=False rounds=12 peak=1153 trace=2784 133s
+actkv_r0.05.jsonl task 3 run 0: success=False rounds=10 peak=759 trace=2688 104s
+actkv_r0.1.jsonl task 3 run 0: success=False rounds=10 peak=877 trace=2690 105s
+actkv_r0.2.jsonl task 3 run 0: success=False rounds=12 peak=1114 trace=2784 130s
+actkv_r0.3.jsonl task 3 run 0: success=False rounds=12 peak=1351 trace=2784 134s
+snapkv_r0.05.jsonl task 3 run 0: success=False rounds=16 peak=739 trace=4133 175s
+snapkv_r0.1.jsonl task 3 run 0: success=False rounds=16 peak=857 trace=3660 178s
+snapkv_r0.2.jsonl task 3 run 0: success=False rounds=16 peak=1094 trace=3658 177s
+snapkv_r0.3.jsonl task 3 run 0: success=False rounds=16 peak=1331 trace=3664 177s
+streaming_r0.05.jsonl task 3 run 0: success=False rounds=16 peak=739 trace=3420 176s
+streaming_r0.1.jsonl task 3 run 0: success=False rounds=16 peak=857 trace=3936 188s
+streaming_r0.2.jsonl task 3 run 0: success=False rounds=10 peak=1094 trace=2689 109s
+streaming_r0.3.jsonl task 3 run 0: success=False rounds=10 peak=1331 trace=2689 110s
+[4/50 tasks] 2h13m used, 0h33m per task, ETA for all tasks 25h29m (wall 2h13m)
+stopping before task 4: another task (~0h33m) would pass the 2.75h budget (2h13m used)

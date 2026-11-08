@@ -1,0 +1,626 @@
+{
+  "full": "results/vault/full.jsonl",
+  "bootstrap": {
+    "unit": "task",
+    "resamples": 2000,
+    "level": 0.95,
+    "seed": 0
+  },
+  "configs": [
+    {
+      "name": "FullKV",
+      "config_id": "9f37d6bc170d",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "full",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": null,
+        "full_results": null,
+        "slack": null,
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 1.0,
+      "acc_ci": [
+        1.0,
+        1.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": 0.0,
+      "delta_ci": [
+        0.0,
+        0.0
+      ],
+      "acc_vs_full": 1.0,
+      "peak_vs_full": 1.0,
+      "trace_vs_full": 1.0,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (adaptive)",
+      "config_id": "9fa2d866b7f3",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "actkv",
+        "adaptive": true,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": null,
+        "full_results": null,
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.5,
+      "acc_ci": [
+        0.0,
+        1.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -0.5,
+      "delta_ci": [
+        -1.0,
+        0.0
+      ],
+      "acc_vs_full": 0.5,
+      "peak_vs_full": 0.4505052997511097,
+      "trace_vs_full": 0.9995635380119505,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (adaptive, bidirectional)",
+      "config_id": "60183a657b4a",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "actkv",
+        "adaptive": true,
+        "bidirectional": true,
+        "budget": null,
+        "budget_ratio": null,
+        "full_results": null,
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.5,
+      "acc_ci": [
+        0.0,
+        1.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -0.5,
+      "delta_ci": [
+        -1.0,
+        0.0
+      ],
+      "acc_vs_full": 0.5,
+      "peak_vs_full": 0.4505052997511097,
+      "trace_vs_full": 0.9995635380119505,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (r=0.05)",
+      "config_id": "47bfcfd189c6",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "actkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.05,
+        "full_results": "full.jsonl",
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.2922267611822487,
+      "trace_vs_full": 1.0236991732433838,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (r=0.1)",
+      "config_id": "96d4e77d0aba",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "actkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.1,
+        "full_results": "full.jsonl",
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.3358423389006953,
+      "trace_vs_full": 0.9860093014046908,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (r=0.2)",
+      "config_id": "6d775b835274",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "actkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.2,
+        "full_results": "full.jsonl",
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.5,
+      "acc_ci": [
+        0.0,
+        1.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -0.5,
+      "delta_ci": [
+        -1.0,
+        0.0
+      ],
+      "acc_vs_full": 0.5,
+      "peak_vs_full": 0.4233007675188538,
+      "trace_vs_full": 0.9949772772781488,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "actkv (r=0.3)",
+      "config_id": "acb126dc17c6",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "actkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.3,
+        "full_results": "full.jsonl",
+        "slack": null,
+        "decay": 0.5,
+        "top_p_hit": 0.9,
+        "head_reduce": "mean",
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.5,
+      "acc_ci": [
+        0.0,
+        1.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -0.5,
+      "delta_ci": [
+        -1.0,
+        0.0
+      ],
+      "acc_vs_full": 0.5,
+      "peak_vs_full": 0.5073760857254037,
+      "trace_vs_full": 0.9949772772781488,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "snapkv (r=0.05)",
+      "config_id": "affa89b8195e",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "snapkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.05,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.2839236908692001,
+      "trace_vs_full": 1.6918143067303628,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "snapkv (r=0.1)",
+      "config_id": "c8b4171a4162",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "snapkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.1,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.32767360496593795,
+      "trace_vs_full": 1.6044299986576034,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "snapkv (r=0.2)",
+      "config_id": "e3b444128ebb",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "snapkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.2,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.4149976972058052,
+      "trace_vs_full": 1.3293979644763598,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "snapkv (r=0.3)",
+      "config_id": "9bf1710945cc",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "snapkv",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.3,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.5,
+      "acc_ci": [
+        0.0,
+        1.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -0.5,
+      "delta_ci": [
+        -1.0,
+        0.0
+      ],
+      "acc_vs_full": 0.5,
+      "peak_vs_full": 0.4991705954279679,
+      "trace_vs_full": 1.1234768719102228,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "streaming (r=0.05)",
+      "config_id": "c18e0cebdefd",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "streaming",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.05,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.2803633693154802,
+      "trace_vs_full": 1.1755060928098011,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "streaming (r=0.1)",
+      "config_id": "e78ac6f6bfcd",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "streaming",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.1,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.32767360496593795,
+      "trace_vs_full": 1.1047818036705617,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "streaming (r=0.2)",
+      "config_id": "b958e449569b",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "streaming",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.2,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.0,
+      "acc_ci": [
+        0.0,
+        0.0
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -1.0,
+      "delta_ci": [
+        -1.0,
+        -1.0
+      ],
+      "acc_vs_full": 0.0,
+      "peak_vs_full": 0.4149976972058052,
+      "trace_vs_full": 0.9795336083245105,
+      "devices": [
+        "cuda"
+      ]
+    },
+    {
+      "name": "streaming (r=0.3)",
+      "config_id": "977f253e1fcb",
+      "config": {
+        "model": "Qwen/Qwen3-8B",
+        "dtype": "bfloat16",
+        "env": "vault",
+        "method": "streaming",
+        "adaptive": false,
+        "bidirectional": false,
+        "budget": null,
+        "budget_ratio": 0.3,
+        "full_results": "full.jsonl",
+        "slack": "fullkv-task-mean",
+        "decay": null,
+        "top_p_hit": null,
+        "head_reduce": null,
+        "max_new_tokens": 1024,
+        "greedy": false,
+        "no_thinking": true
+      },
+      "n_tasks": 4,
+      "n_episodes": 4,
+      "acc": 0.25,
+      "acc_ci": [
+        0.0,
+        0.75
+      ],
+      "n_common_tasks": 4,
+      "delta_vs_full": -0.75,
+      "delta_ci": [
+        -1.0,
+        -0.25
+      ],
+      "acc_vs_full": 0.25,
+      "peak_vs_full": 0.4991705954279679,
+      "trace_vs_full": 0.999675146803122,
+      "devices": [
+        "cuda"
+      ]
+    }
+  ]
+}

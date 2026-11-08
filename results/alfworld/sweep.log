@@ -1,0 +1,12 @@
+Initializing AlfredTWEnv...
+  0%|          | 0/341 [00:00<?, ?it/s] 60%|██████    | 206/341 [00:00<00:00, 2038.04it/s]100%|██████████| 341/341 [00:00<00:00, 1795.11it/s]
+Overall we have 134 games in split=eval_out_of_distribution
+Evaluating with 134 games
+Loading weights:   0%|          | 0/399 [00:00<?, ?it/s]Loading weights: 100%|██████████| 399/399 [00:00<00:00, 8411.80it/s]
+full.jsonl task 0 run 0: success=False rounds=50 peak=10555 trace=10555 473s
+actkv_adaptive.jsonl task 0 run 0: success=False rounds=50 peak=3420 trace=10555 458s
+actkv_r0.2.jsonl task 0 run 0: success=False rounds=50 peak=2674 trace=10555 448s
+snapkv_r0.2.jsonl task 0 run 0: success=False rounds=50 peak=2672 trace=10555 471s
+streaming_r0.2.jsonl task 0 run 0: success=False rounds=50 peak=2672 trace=10555 474s
+[1/134 tasks] 0h38m used, 0h38m per task, ETA for all tasks 85h49m (wall 0h38m)
+stopping before task 1: another task (~0h38m) would pass the 0.75h budget (0h38m used)
