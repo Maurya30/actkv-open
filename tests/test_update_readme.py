@@ -56,6 +56,19 @@ def test_episode_counts_come_from_the_data(tmp_path):
     assert "| actkv (adaptive) | 23 | 46 |" in text and "one run each" not in text
 
 
+
+def test_a_benchmark_where_fullkv_solved_nothing_gets_a_note_not_a_table(tmp_path):
+    update = load_script("scripts/update_readme.py")
+    res, readme = fixture(tmp_path)
+    (res / "alfworld").mkdir()
+    full = {**CONFIG, "name": "FullKV", "n_tasks": 1, "n_episodes": 1, "acc": 0.0, "acc_ci": [None, None]}
+    (res / "alfworld" / "summary.json").write_text(json.dumps({"configs": [full, {**CONFIG, "acc": 0.0}]}))
+    assert update.main(["--results", str(res), "--readme", str(readme)]) == 0
+    text = readme.read_text()
+    alfworld = text.split("### alfworld")[1].split("###")[0]
+    assert "FullKV solved 0 of 1 tasks" in alfworld and "| config |" not in alfworld
+    assert "| actkv (adaptive) | 23 | 23 | 0.610 [0.40, 0.80]" in text.split("### vault")[1]
+
 BENCH = {"kernel_path": "triton", "note": "compiled Triton kernels", "device": "cuda", "gpu": "NVIDIA A100-SXM4-80GB",
          "dtype": "float16", "torch": "2.9", "triton": "3.5", "n_layers": 1, "block_size": 16, "kv_heads": 8,
          "q_heads": 32, "head_dim": 128, "iters": 5, "warmup": 1,

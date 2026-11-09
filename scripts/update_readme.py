@@ -59,6 +59,13 @@ def render(env, bench, summaries, results_dir, readme_dir):
              f"Run on {env['gpu']} (torch {env['torch']}, CUDA {env['cuda']}, triton {env['triton']}, "
              f"transformers {env['transformers']}), commit `{(env.get('git_sha') or '?')[:7]}`, {env['date'][:10]}.", ""]
     for name, s in summaries:
+        full = next((c for c in s["configs"] if c["name"] == "FullKV"), None)
+        if full and full["acc"] == 0:
+            # with no FullKV successes every policy scores 0 too, so the table can't tell them apart
+            lines += [f"### {name}", "",
+                      f"Not shown: FullKV solved 0 of {full['n_tasks']} tasks, so this run can't tell the eviction "
+                      f"policies apart. The raw results are in `results/{name}/`.", ""]
+            continue
         cfg = s["configs"][0]["config"]
         lines += [f"### {name}", "",
                   f"Model `{cfg.get('model')}`, thinking {'off' if cfg.get('no_thinking') else 'on'}, "
